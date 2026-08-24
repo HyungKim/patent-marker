@@ -1,0 +1,40 @@
+{
+  // ── 터미널 메뉴 > 작업 실행(Run Task) 에 나타나는 버튼들 ─────────────
+  // 번호 순서대로 실행하면 됩니다. Windows 와 macOS 를 자동으로 구분합니다.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1) 처음 한 번: 환경 설치 (인터넷 필요)",
+      "type": "shell",
+      "command": "bash", "args": ["setup.sh"],
+      "windows": { "command": "cmd", "args": ["/c", "setup.bat"] },
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    },
+    {
+      "label": "1-오프라인) 처음 한 번: 환경 설치 (offline_bundle 사용)",
+      "type": "shell",
+      "command": "bash", "args": ["setup_offline.sh"],
+      "windows": { "command": "cmd", "args": ["/c", "setup_offline.bat"] },
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    },
+    {
+      "label": "2) 프로그램 실행 (Ollama 자동 시작 + 브라우저 열기)",
+      "type": "shell",
+      "command": "bash", "args": ["run.sh"],
+      "windows": { "command": "cmd", "args": ["/c", "run.bat"] },
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "3) 점검: 스모크 테스트 (모델 없이)",
+      "type": "shell",
+      "command": ".venv/bin/python", "args": ["tests/smoke.py"],
+      "windows": { "command": ".venv\\Scripts\\python.exe", "args": ["tests\\smoke.py"] },
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    }
+  ]
+}

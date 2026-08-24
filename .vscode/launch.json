@@ -1,0 +1,44 @@
+{
+  // ── 실행/디버그 메뉴 (왼쪽 ▶ 아이콘 또는 F5) ─────────────────────────
+  // "▶ 특허 마킹 서버 실행" 을 고르고 F5 를 누르면 서버가 뜹니다.
+  // (Ollama 는 미리 켜져 있어야 합니다 → 터미널 메뉴 > 작업 실행 > "2) Ollama 시작")
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "▶ 특허 마킹 서버 실행",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "app.main",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "🧪 스모크 테스트 (모델 없이, 몇 초)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/smoke.py",
+      "args": ["samples/회사보고자료_예시.pptx", "out_smoke.pptx"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "🧪 모의 모델 테스트 (몇 초)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/mock_llm.py",
+      "args": ["samples/회사보고자료_예시.pptx", "out_mock.pptx"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "🧪 실제 모델 테스트 (수 분)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/e2e.py",
+      "args": ["samples/회사보고자료_예시.pptx", "out_e2e.pptx"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

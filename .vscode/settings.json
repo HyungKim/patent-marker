@@ -1,0 +1,16 @@
+{
+  // ── 이 프로젝트를 VS Code 로 열 때 자동 적용되는 설정 ──────────────
+  // 터미널을 열면 .venv 가상환경을 자동으로 활성화합니다.
+  "python.terminal.activateEnvironment": true,
+  // 파일은 항상 UTF-8 로 저장 (한글 깨짐 방지)
+  "files.encoding": "utf8",
+  // 탐색기에서 보기만 어지럽히는 폴더는 숨김
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+  "[python]": {
+    "editor.rulers": [100],
+    "editor.tabSize": 4
+  }
+}

@@ -1,0 +1,7 @@
+{
+  // VS Code 가 "이 확장을 설치할까요?" 하고 물어봅니다. Python 개발에 필요한 것들입니다.
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.debugpy"
+  ]
+}
