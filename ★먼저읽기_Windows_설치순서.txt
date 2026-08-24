@@ -1,0 +1,15 @@
+﻿★먼저읽기 — Windows 설치 순서
+
+이 파일은 안내용 바로가기입니다. 자세한 따라하기 가이드는 아래 문서를 여세요.
+
+  · GitHub 화면에서 보기:  docs 폴더 → 00_Windows_따라하기_가이드.md
+  · 압축을 푼 뒤 PC 에서 보기:  docs\00_Windows_따라하기_가이드.md (VS Code 나 메모장으로 열기)
+
+GitHub 에서 내려받은 경우 요약:
+  1) 초록 Code 버튼 → Download ZIP → C:\ 에 풀기 → 폴더명을 patent_marker 로 변경
+  2) setup.bat 더블클릭 (인터넷 필요 · Python·Ollama·모델 9GB 자동 설치)
+  3) run.bat 더블클릭 → 브라우저에서 PPTX 올리고 분석 시작
+     (GPU 없는 PC 는 run_8b.bat 사용)
+
+USB 로 받은 15GB 압축본(offline_bundle 포함)을 쓰는 경우에는 setup.bat 대신
+setup_offline.bat 을 실행하면 인터넷 없이 설치됩니다.

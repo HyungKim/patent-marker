@@ -1,0 +1,15 @@
+[project]
+name = "patent-marker"
+version = "0.1.0"
+description = "온디바이스 LLM 으로 회사 보고자료(PPTX)의 특허 출원 후보 구간을 마킹하는 오프라인 도구"
+requires-python = ">=3.11"
+dependencies = [
+    "python-pptx>=1.0.2",
+    "lxml>=5.2",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+]
+
+[tool.uv]
+package = false

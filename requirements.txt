@@ -1,0 +1,8 @@
+# 특허 마킹 도구 ─ 파이썬 라이브러리 목록
+# 설치:  python -m pip install -r requirements.txt
+# (이 Mac 에서 검증한 버전으로 고정. 하위 의존성은 pip 이 알아서 맞춥니다.)
+python-pptx==1.0.2
+lxml==6.1.1
+fastapi==0.141.1
+uvicorn==0.52.3
+python-multipart==0.0.32
