@@ -1,0 +1,329 @@
+<!doctype html>
+<!--
+  index.html ─ 브라우저에 보이는 화면 (이 프로그램의 유일한 화면 파일)
+  =====================================================================
+  [구조]
+    1. <style>  : 화면 모양(색·간격). CSS.
+    2. <body>   : 화면에 놓이는 요소들. HTML.
+         #health   상단 상태줄  (Ollama·모델 준비 여부)
+         #setup    파일 올리기 + 옵션 체크박스 + '분석 시작'
+         #progress 진행률 막대
+         #result   결과 카드·필터·후보 목록·내려받기
+    3. <script> : 동작. JavaScript.
+         health()  → /api/health 호출해 상태줄 갱신
+         #go 클릭  → /api/jobs 에 파일 업로드, 0.9초마다 poll() 로 진행 상황 확인
+         render()  → 결과를 카드와 목록으로 그리기
+
+  [오프라인 보장]
+    외부 CDN·웹폰트·이미지 요청이 전혀 없습니다. CSS/JS 전부 이 파일 안에 있습니다.
+
+  [서버(main.py)와 주고받는 주소]
+    GET  /api/health              상태
+    POST /api/jobs                업로드·분석 시작  → {job_id}
+    GET  /api/jobs/{id}           진행 상황·결과
+    POST /api/jobs/{id}/cancel    중단
+    GET  /api/jobs/{id}/download  결과 파일
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>특허 마킹 도구 · 온디바이스</title>
+<style>
+  /* ── 색상 변수: 라이트/다크 모드 ─────────────────────────── */
+  :root{
+    --bg:#f6f8fb; --panel:#ffffff; --ink:#16202e; --muted:#6b7891;
+    --line:#dfe6ef; --accent:#0f766e; --accent-ink:#ffffff;
+    --a:#f0b429; --b:#4aa3df; --c:#a8b3c1; --risk:#e8663c;
+    --shadow:0 1px 3px rgba(20,32,48,.08), 0 8px 24px rgba(20,32,48,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#0e1420; --panel:#161e2c; --ink:#e6ecf5; --muted:#93a2b8;
+           --line:#26324a; --accent:#2dd4bf; --accent-ink:#06231f;
+           --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3); }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  h1{font-size:23px;margin:0 0 4px;letter-spacing:-.2px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 24px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .grow{flex:1;min-width:220px}
+
+  /* ── 상태줄 ─────────────────────────────────────────────── */
+  #health{display:flex;align-items:center;gap:10px;font-size:13.5px;
+    padding:11px 16px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel);margin-bottom:18px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
+  .dot.ok{background:#22c55e} .dot.bad{background:var(--risk)}
+  code{background:rgba(127,127,127,.14);padding:2px 6px;border-radius:5px;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  /* ── 파일 놓는 영역 ──────────────────────────────────────── */
+  #drop{border:2px dashed var(--line);border-radius:12px;padding:34px 20px;
+    text-align:center;cursor:pointer;transition:.15s;background:var(--panel)}
+  #drop:hover,#drop.over{border-color:var(--accent);background:rgba(45,212,191,.06)}
+  #drop b{display:block;font-size:15.5px;margin-bottom:4px}
+  #drop span{color:var(--muted);font-size:13px}
+  input[type=file]{display:none}
+
+  label.opt{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;
+    color:var(--ink);cursor:pointer;user-select:none}
+  select,input[type=text]{background:var(--bg);color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:7px 10px;font:inherit;font-size:13.5px}
+  button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:9px;
+    padding:11px 20px;font:inherit;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.45;cursor:default}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:500}
+
+  /* ── 진행률 ─────────────────────────────────────────────── */
+  #bar{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin:14px 0 8px}
+  #bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+  .stage{font-size:13.5px;color:var(--muted)}
+
+  /* ── 결과 ───────────────────────────────────────────────── */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .card b{display:block;font-size:24px;line-height:1.2}
+  .card span{font-size:12px;color:var(--muted)}
+
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .chip{border:1px solid var(--line);background:var(--panel);color:var(--muted);
+    border-radius:99px;padding:5px 13px;font-size:13px;cursor:pointer}
+  .chip.on{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+
+  .find{border:1px solid var(--line);border-left-width:4px;border-radius:9px;
+    background:var(--panel);padding:12px 15px;margin-bottom:9px}
+  .find.gA{border-left-color:var(--a)} .find.gB{border-left-color:var(--b)}
+  .find.gC{border-left-color:var(--c)} .find.risk{border-left-color:var(--risk)}
+  .find .meta{display:flex;gap:7px;flex-wrap:wrap;align-items:center;
+    font-size:11.5px;color:var(--muted);margin-bottom:5px}
+  .tag{border-radius:5px;padding:1px 7px;font-weight:600;font-size:11px;
+    background:rgba(127,127,127,.15)}
+  .tag.A{background:var(--a);color:#3a2a00} .tag.B{background:var(--b);color:#04263a}
+  .tag.C{background:var(--c);color:#1b2430} .tag.R{background:var(--risk);color:#fff}
+  .find q{display:block;font-size:14.5px;margin:2px 0 5px;quotes:'“' '”'}
+  .find p{margin:0;font-size:13px;color:var(--muted)}
+  .empty{color:var(--muted);font-size:13.5px;padding:16px 0}
+  .err{color:var(--risk);font-size:13.5px;white-space:pre-wrap}
+  .hide{display:none}
+  .note{font-size:12.5px;color:var(--muted);margin-top:14px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>특허 마킹 도구</h1>
+  <p class="sub">회사 보고자료(PPTX)를 읽어 특허 출원 검토가 필요한 구간을 표시합니다. 문서는 이 컴퓨터를 벗어나지 않습니다.</p>
+
+  <!-- 상단 상태줄: health() 가 채움 -->
+  <div id="health"><span class="dot" id="hdot"></span><span id="htext">온디바이스 모델 확인 중…</span></div>
+
+  <!-- 1. 파일 올리기 + 옵션 -->
+  <div class="panel" id="setup">
+    <div id="drop">
+      <b>PPTX 파일을 여기에 놓거나 클릭해 선택하세요</b>
+      <span>업로드된 파일과 분석 결과는 외부로 전송되지 않습니다</span>
+      <input type="file" id="file" accept=".pptx,.potx">
+    </div>
+    <div class="row" style="margin-top:16px">
+      <label class="opt"><input type="checkbox" id="optTag" checked> 【특허검토필요】 문구 표시</label>
+      <label class="opt"><input type="checkbox" id="optSummary" checked> 요약 슬라이드 추가</label>
+      <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
+      <label class="opt"><input type="checkbox" id="optC"> C등급(참고)도 포함</label>
+      <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
+      <div class="grow"></div>
+      <button id="go" disabled>분석 시작</button>
+    </div>
+  </div>
+
+  <!-- 2. 진행 상황 -->
+  <div class="panel hide" id="progress">
+    <div class="row"><b id="fname" class="grow"></b>
+      <button class="ghost" id="cancel">중단</button></div>
+    <div id="bar"><i></i></div>
+    <div class="stage" id="stage"></div>
+    <div class="err hide" id="errbox"></div>
+  </div>
+
+  <!-- 3. 결과 -->
+  <div id="result" class="hide">
+    <div class="cards" id="cards"></div>
+    <div class="row" style="margin-bottom:18px">
+      <button id="dl">마킹된 PPTX 내려받기</button>
+      <button class="ghost" id="again">다른 파일 분석</button>
+    </div>
+    <div class="filters" id="filters"></div>
+    <div id="list"></div>
+    <p class="note">
+      본 결과는 변리사 검토 전 <b>1차 스크리닝</b>입니다. 선행기술 조사와 신규성·진보성 판단은 포함되어 있지 않습니다.<br>
+      <b>묵시</b> 표시는 구체적 기술 수단이 문면에 없지만 존재가 시사되는 구간으로, 발명자 인터뷰로 내용을 확인해야 하는 후보입니다.<br>
+      <b>⚠공개</b> 표시는 전시·발표·납품 등으로 신규성이 상실됐을 수 있는 구간이며 출원 기한 확인이 필요합니다.
+    </p>
+  </div>
+</div>
+
+<script>
+// $("#id") 처럼 짧게 요소를 찾기 위한 도우미
+const $ = s => document.querySelector(s);
+let jobId = null, timer = null, findings = [], filter = "ALL";
+
+// ── 상태 확인: Ollama 가 떠 있고 모델이 있는지 ──────────────────
+async function health(){
+  try{
+    const h = await (await fetch("/api/health")).json();
+    if(!h.ok){
+      $("#hdot").className = "dot bad";
+      $("#htext").innerHTML = `Ollama 에 연결할 수 없습니다 (<code>${h.host}</code>). 터미널에서 <code>ollama serve</code> 를 실행하세요.`;
+      return false;
+    }
+    if(!h.model_ready){
+      $("#hdot").className = "dot bad";
+      $("#htext").innerHTML = `모델 <code>${h.model}</code> 이 없습니다. <code>ollama pull ${h.model}</code> 로 먼저 내려받으세요.`;
+      return false;
+    }
+    $("#hdot").className = "dot ok";
+    $("#htext").innerHTML = `온디바이스 모델 <code>${h.model}</code> 준비됨 · 오프라인 동작`;
+    return true;
+  }catch(e){
+    $("#hdot").className = "dot bad";
+    $("#htext").textContent = "서버 상태를 확인할 수 없습니다.";
+    return false;
+  }
+}
+
+// ── 파일 선택 (클릭 또는 드래그 앤 드롭) ─────────────────────────
+const drop = $("#drop"), fileInput = $("#file");
+drop.onclick = () => fileInput.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => {
+  e.preventDefault(); drop.classList.remove("over");
+  if(e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; pick(); }
+};
+fileInput.onchange = pick;
+function pick(){
+  const f = fileInput.files[0];
+  if(!f) return;
+  drop.querySelector("b").textContent = f.name;
+  drop.querySelector("span").textContent = (f.size/1048576).toFixed(1) + " MB · 준비됨";
+  $("#go").disabled = false;
+}
+
+// ── '분석 시작' : 파일과 옵션을 서버로 보내고 진행 상황 확인 시작 ──
+$("#go").onclick = async () => {
+  const f = fileInput.files[0];
+  if(!f) return;
+  const fd = new FormData();           // 파일 업로드용 묶음
+  fd.append("file", f);
+  fd.append("think", $("#optThink").checked);
+  fd.append("include_grade_c", $("#optC").checked);
+  fd.append("scan_all", $("#optScanAll").checked);
+  fd.append("add_summary", $("#optSummary").checked);
+  fd.append("tag_marks", $("#optTag").checked);
+
+  $("#setup").classList.add("hide");
+  $("#progress").classList.remove("hide");
+  $("#result").classList.add("hide");
+  $("#errbox").classList.add("hide");
+  $("#fname").textContent = f.name;
+
+  const r = await fetch("/api/jobs", {method:"POST", body:fd});
+  if(!r.ok){ fail((await r.json()).detail || "업로드 실패"); return; }
+  jobId = (await r.json()).job_id;
+  timer = setInterval(poll, 900);      // 0.9초마다 진행 상황 확인
+  poll();
+};
+
+$("#cancel").onclick = async () => {
+  if(jobId) await fetch(`/api/jobs/${jobId}/cancel`, {method:"POST"});
+};
+$("#again").onclick = () => {
+  clearInterval(timer);
+  $("#result").classList.add("hide");
+  $("#progress").classList.add("hide");
+  $("#setup").classList.remove("hide");
+  $("#go").disabled = true;
+  fileInput.value = "";
+  drop.querySelector("b").textContent = "PPTX 파일을 여기에 놓거나 클릭해 선택하세요";
+  drop.querySelector("span").textContent = "업로드된 파일과 분석 결과는 외부로 전송되지 않습니다";
+};
+$("#dl").onclick = () => { if(jobId) location.href = `/api/jobs/${jobId}/download`; };
+
+function fail(msg){
+  clearInterval(timer);
+  $("#errbox").textContent = msg;
+  $("#errbox").classList.remove("hide");
+  $("#cancel").textContent = "처음으로";
+  $("#cancel").onclick = () => location.reload();
+}
+
+// ── 진행 상황 확인 (주기적으로 호출) ────────────────────────────
+async function poll(){
+  const r = await fetch(`/api/jobs/${jobId}`);
+  if(!r.ok) return;
+  const j = await r.json();
+  const pct = j.slide_total ? Math.round(j.slide_done / j.slide_total * 100) : 3;
+  $("#bar>i").style.width = Math.max(pct,3) + "%";
+  $("#stage").textContent = j.slide_total
+    ? `${j.stage} — ${j.slide_done}/${j.slide_total} 슬라이드 · 후보 ${j.findings.length}건`
+    : j.stage;
+
+  if(j.status === "error"){ fail(j.error); return; }
+  if(j.status === "cancelled"){ fail("사용자가 중단했습니다."); return; }
+  if(j.status === "done"){
+    clearInterval(timer);
+    findings = j.findings;
+    render(j.stats);
+    $("#progress").classList.add("hide");
+    $("#result").classList.remove("hide");
+  }
+}
+
+// ── 결과 그리기: 집계 카드 + 필터 + 후보 목록 ─────────────────────
+function render(st){
+  const g = st.grades || {};
+  $("#cards").innerHTML = [
+    [st.total ?? 0, "마킹 후보"],
+    [g.A ?? 0, "A · 즉시 출원 검토"],
+    [g.B ?? 0, "B · 발명 발굴 필요"],
+    [st.implicit ?? 0, "묵시적 표현"],
+    [st.disclosure_risk ?? 0, "⚠ 공개 리스크"],
+  ].map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
+
+  const opts = [["ALL","전체"],["A","A 등급"],["B","B 등급"],
+                ["IMP","묵시적 표현"],["RISK","⚠ 공개 리스크"]];
+  $("#filters").innerHTML = opts.map(([k,l]) =>
+    `<span class="chip${k===filter?" on":""}" data-k="${k}">${l}</span>`).join("");
+  $("#filters").querySelectorAll(".chip").forEach(c => c.onclick = () => {
+    filter = c.dataset.k; render(st);
+  });
+
+  const rows = findings.filter(f =>
+    filter === "ALL" ? true :
+    filter === "IMP" ? f.implicit :
+    filter === "RISK" ? f.disclosure_risk : f.grade === filter);
+
+  $("#list").innerHTML = rows.length ? rows.map(f => {
+    const cls = f.disclosure_risk ? "risk" : "g" + f.grade;
+    const tags = [`<span class="tag ${f.grade}">${f.grade}</span>`];
+    if(f.disclosure_risk) tags.push(`<span class="tag R">⚠ 공개</span>`);
+    if(f.implicit) tags.push(`<span class="tag">묵시</span>`);
+    if(f.source === "lexicon") tags.push(`<span class="tag">규칙 사전</span>`);
+    return `<div class="find ${cls}">
+      <div class="meta">${tags.join("")}<span>p${f.slide_no}</span><span>·</span>
+        <span>${esc(f.category)}</span></div>
+      <q>${esc(f.quote)}</q>
+      <p>${esc(f.reason)}</p></div>`;
+  }).join("") : `<div class="empty">해당 조건에 맞는 항목이 없습니다.</div>`;
+}
+// HTML 특수문자를 안전하게 표시 (< > & " 가 태그로 해석되지 않도록)
+const esc = s => (s||"").replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+health();   // 화면이 열리면 바로 상태 확인
+</script>
+</body>
+</html>
