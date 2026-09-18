@@ -45,7 +45,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        self._send({"models": [{"name": "qwen3:14b"}]})
+        self._send({"models": [{"name": "qwen3:8b"}, {"name": "qwen3:14b"}]})
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
