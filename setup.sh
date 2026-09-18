@@ -7,15 +7,15 @@
 #    2) .venv 가상환경 만들고 라이브러리 설치
 #    3) Ollama 설치
 #    4) Ollama 서버 기동
-#    5) 모델(qwen3:14b) 내려받기   ← 약 9GB. 가장 오래 걸리는 단계
+#    5) 모델(qwen3:8b) 내려받기   ← 약 5GB. 가장 오래 걸리는 단계
 #
 #  사용법      bash setup.sh
-#  모델 변경   PM_MODEL=qwen3:8b bash setup.sh
+#  모델 변경   PM_MODEL=qwen3:14b bash setup.sh   (고품질 모델, GPU/고사양 PC 용)
 #  오프라인    인터넷이 없는 PC 에서는 setup_offline.sh 를 쓰세요.
 # =============================================================================
 set -u
 cd "$(dirname "$0")"
-MODEL="${PM_MODEL:-qwen3:14b}"
+MODEL="${PM_MODEL:-qwen3:8b}"
 OLLAMA_URL="http://127.0.0.1:11434"
 
 say()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }

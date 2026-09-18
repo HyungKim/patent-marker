@@ -11,12 +11,12 @@ REM
 REM    offline_bundle\wheels\   파이썬 라이브러리
 REM    offline_bundle\python\   python-3.12.x-amd64.exe   (Python 이 없을 때만 사용)
 REM    offline_bundle\ollama\   OllamaSetup.exe           (Ollama 가 없을 때만 사용)
-REM    offline_bundle\models\   모델 파일 (약 9GB)
+REM    offline_bundle\models\   모델 파일 (약 14GB, qwen3:8b + qwen3:14b)
 REM
 REM  사용법   이 파일을 더블클릭
 REM =============================================================================
 set "B=%~dp0offline_bundle"
-if "%PM_MODEL%"=="" (set "MODEL=qwen3:14b") else (set "MODEL=%PM_MODEL%")
+if "%PM_MODEL%"=="" (set "MODEL=qwen3:8b") else (set "MODEL=%PM_MODEL%")
 set "OLLAMA_URL=http://127.0.0.1:11434"
 
 echo.

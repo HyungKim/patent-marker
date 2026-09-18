@@ -8,14 +8,14 @@
 #    offline_bundle/wheels/   파이썬 라이브러리
 #    offline_bundle/python/   python-3.12.x-macos11.pkg   (Python 이 없을 때만 사용)
 #    offline_bundle/ollama/   Ollama-darwin.zip           (Ollama 가 없을 때만 사용)
-#    offline_bundle/models/   모델 파일 (약 9GB)
+#    offline_bundle/models/   모델 파일 (약 14GB, qwen3:8b + qwen3:14b)
 #
 #  사용법   bash setup_offline.sh
 # =============================================================================
 set -u
 cd "$(dirname "$0")"
 B="$PWD/offline_bundle"
-MODEL="${PM_MODEL:-qwen3:14b}"
+MODEL="${PM_MODEL:-qwen3:8b}"
 OLLAMA_URL="http://127.0.0.1:11434"
 
 say()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }

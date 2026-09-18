@@ -13,10 +13,11 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
 
 0. GitHub 에서 받은 경우: 초록 **Code → Download ZIP** → `C:\` 에 풀고 폴더명을 `patent_marker` 로 변경.
    (저장소에는 15GB `offline_bundle` 이 없으므로 아래 `setup.bat` 온라인 설치를 사용합니다)
-1. `setup.bat` 더블클릭 ─ 처음 한 번. Python·Ollama·모델(9GB)을 자동 설치합니다. (인터넷 필요)
+1. `setup.bat` 더블클릭 ─ 처음 한 번. Python·Ollama·모델(5GB)을 자동 설치합니다. (인터넷 필요)
    - 인터넷이 없는 PC 라면 `setup_offline.bat` (미리 만든 `offline_bundle/` 필요)
 2. `run.bat` 더블클릭 ─ 브라우저가 열립니다. PPTX 를 올리고 **분석 시작**.
-   - GPU 가 없거나 메모리 16GB 이하면 `run_8b.bat` (가벼운 qwen3:8b 로 실행)
+   - 기본 모델은 가벼운 qwen3:8b 라 GPU 없는 PC·메모리 16GB 에서도 실용적입니다.
+   - NVIDIA GPU(VRAM 12GB 이상)가 있는 PC 는 `run_14b.bat` (고품질 qwen3:14b, `ollama pull qwen3:14b` 로 먼저 받기)
 3. 끝나면 **마킹된 PPTX 내려받기**.
 
 ## 빠른 시작 (macOS)
@@ -54,7 +55,7 @@ tests/      점검 스크립트 (모델 없이 돌릴 수 있는 것 포함)
 samples/    연습용 보고서 · 실제 모델로 마킹한 결과 예시
 tools/      오프라인 설치 꾸러미 만들기
 .vscode/    VS Code 설정 (작업 메뉴 · F5 실행)
-setup.*     처음 한 번 설치     run.*   실행 (run_8b.bat = 가벼운 모델)     setup_offline.*   인터넷 없이 설치
+setup.*     처음 한 번 설치     run.*   실행 (run_14b.bat = 고품질 모델)     setup_offline.*   인터넷 없이 설치
 ```
 
 ---
@@ -63,7 +64,7 @@ setup.*     처음 한 번 설치     run.*   실행 (run_8b.bat = 가벼운 모
 
 | 바꾸고 싶은 것 | 파일 | 항목 |
 |---|---|---|
-| 모델 (가볍게) | `app/config.py` | `MODEL = "qwen3:8b"` |
+| 모델 (고품질로) | `app/config.py` | `MODEL = "qwen3:14b"` (또는 `run_14b.bat` 사용) |
 | 표시 문구 | `app/config.py` | `TAG_TEXT` |
 | 형광펜 색 | `app/config.py` | `GRADE_COLOR` |
 | 단서 표현 추가 (업종 바뀔 때) | `app/lexicon.py` | `RULES`, `NOISE` |
