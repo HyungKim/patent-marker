@@ -12,12 +12,12 @@ config.py ─ 프로그램 전체에서 공통으로 쓰는 "설정값" 모음
       웹 화면 주소(포트)를 바꾸고 싶다 ... PORT
 
 [환경 변수란?]
-  os.environ.get("PM_MODEL", "qwen3:14b") 는
-  "PM_MODEL 이라는 환경 변수가 있으면 그 값을, 없으면 'qwen3:14b' 를 쓴다" 는 뜻입니다.
+  os.environ.get("PM_MODEL", "qwen3:8b") 는
+  "PM_MODEL 이라는 환경 변수가 있으면 그 값을, 없으면 'qwen3:8b' 를 쓴다" 는 뜻입니다.
   코드를 고치지 않고 실행 시점에 값을 바꾸는 용도입니다. (보통은 건드릴 일이 없습니다.)
 
-      macOS / Linux :  PM_MODEL=qwen3:8b bash run.sh
-      Windows       :  set PM_MODEL=qwen3:8b   (엔터 후)   run.bat
+      macOS / Linux :  PM_MODEL=qwen3:14b bash run.sh
+      Windows       :  set PM_MODEL=qwen3:14b   (엔터 후)   run.bat
 """
 from __future__ import annotations
 
@@ -33,9 +33,9 @@ from dataclasses import dataclass, field
 OLLAMA_HOST = os.environ.get("PM_OLLAMA_HOST", "http://127.0.0.1:11434")
 
 # 사용할 모델 이름. 터미널에서 `ollama list` 를 치면 내려받은 모델 목록이 보입니다.
-#   qwen3:14b → 품질 좋음. 메모리 약 10GB 필요 (권장)
-#   qwen3:8b  → 더 빠르고 가벼움(약 5GB). 판정 정확도는 조금 낮음
-MODEL = os.environ.get("PM_MODEL", "qwen3:14b")
+#   qwen3:8b  → 기본. 가볍고 빠름(약 5GB). GPU 없는 PC·메모리 16GB 에서도 실용적
+#   qwen3:14b → 고품질. 메모리 약 10GB 필요 (NVIDIA GPU 또는 24GB RAM 권장, run_14b.bat)
+MODEL = os.environ.get("PM_MODEL", "qwen3:8b")
 
 # Qwen3 의 '생각하기(thinking)' 모드. 켜면 정확도가 조금 오르지만 3~5배 느려집니다.
 # 기본은 끔. 웹 화면의 '추론 모드' 체크박스와 연결되어 있습니다.
