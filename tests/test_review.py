@@ -163,5 +163,29 @@ check("복수: PPTX 아닌 파일 거부", bool(many[4].get("error")))
 check("복수: 깨진 파일이 있어도 나머지는 살아 있음",
       sum(1 for m in many if "counts" in m) == 2)
 
+# ── 8. 변경 일지 ─ 반영 전후로 무엇이 바뀌었는지 기록·리포트 ──────
+log0 = review.change_log()
+check("변경 일지: [사전에 추가] 이벤트 기록",
+      any(e["kind"] == "rule_add" and e["keyword"] == "크로노백형합금" for e in log0))
+
+res = review.commit_with_log([
+    {"filename": "second.pptx", "mode": many[2]["mode"], "items": many[2]["items"]},
+])
+ch = res["change"]
+check("변경 일지: 반영 이벤트 추가", len(review.change_log()) == len(log0) + 1)
+check("변경 일지: dataset 전후 수치", ch["dataset"]["after"] == ch["dataset"]["before"] + 1,
+      str(ch["dataset"]))
+check("변경 일지: 유형별 집계", ch["added"]["gold"] == 1 and ch["added"]["total"] == 1,
+      str(ch["added"]))
+check("변경 일지: 새로 주입된 예시 추적",
+      any(e["quote"] == "신형 지그 고정" for e in ch["examples"]["entered"]),
+      str(ch["examples"]["entered"]))
+check("변경 일지: 저장 결과 요약", res["saved_files"] == 1 and res["saved_items"] == 1)
+try:
+    review.commit_with_log([{"filename": "빈파일.pptx", "mode": "archive", "items": []}])
+    check("변경 일지: 빈 반영 거부", False)
+except ValueError:
+    check("변경 일지: 빈 반영 거부", True)
+
 print(f"\n{'모두 통과' if fails == 0 else f'{fails}건 실패'}")
 sys.exit(1 if fails else 0)
