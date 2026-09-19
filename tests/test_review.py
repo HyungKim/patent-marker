@@ -128,5 +128,40 @@ check("축소 모드 동작", d2["mode"] == "fallback")
 check("축소 모드: 확정 2건", d2["counts"]["gold"] == 2, str(d2["counts"]))
 check("축소 모드: 고아 문구로 오탐 추정", d2["counts"]["fp"] == 1, str(d2["counts"]))
 
+# ── 7. 여러 검토완료본을 한 번에 (preview_many) ──────────────────
+# 두 번째 문서: 다른 내용의 검토본 (형광펜 A색 하나만 칠해 저장)
+P3 = "신형 지그 고정 방식 적용 결과 공유"
+reviewed2 = WORK / "reviewed2.pptx"
+prs3 = Presentation()
+layout3 = min(prs3.slide_layouts, key=lambda l: len(l.placeholders))
+s3 = prs3.slides.add_slide(layout3)
+for shp in list(s3.shapes):
+    if shp.is_placeholder:
+        shp._element.getparent().remove(shp._element)
+tb3 = s3.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(8), Inches(1))
+tb3.text_frame.text = P3
+mark.highlight(tb3.text_frame.paragraphs[0]._p, (0, 8), config.GRADE_COLOR["A"], False)
+prs3.save(str(reviewed2))
+
+broken = WORK / "broken.pptx"
+broken.write_text("이건 PPTX 가 아님", encoding="utf-8")
+
+many = review.preview_many([
+    ("reviewed.pptx", str(reviewed_path)),
+    ("reviewed_복사본.pptx", str(reviewed_path)),   # 같은 문서를 두 번 (중복)
+    ("second.pptx", str(reviewed2)),
+    ("broken.pptx", str(broken)),
+    ("note.txt", str(reviewed2)),                   # 확장자가 다른 파일
+])
+check("복수: 첫 파일 정상 처리", many[0].get("filename") == "reviewed.pptx"
+      and "counts" in many[0])
+check("복수: 같은 문서는 중복 표시(제외)", many[1].get("duplicate_of") == "reviewed.pptx")
+check("복수: 두 번째 문서도 함께 처리", many[2].get("mode") == "fallback"
+      and many[2]["counts"]["gold"] == 1, str(many[2].get("counts")))
+check("복수: 깨진 파일은 그 파일만 오류", bool(many[3].get("error")))
+check("복수: PPTX 아닌 파일 거부", bool(many[4].get("error")))
+check("복수: 깨진 파일이 있어도 나머지는 살아 있음",
+      sum(1 for m in many if "counts" in m) == 2)
+
 print(f"\n{'모두 통과' if fails == 0 else f'{fails}건 실패'}")
 sys.exit(1 if fails else 0)
