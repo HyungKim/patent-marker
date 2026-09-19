@@ -19,7 +19,6 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
    - 인터넷이 없는 PC 라면 `setup_offline.bat` (미리 만든 `offline_bundle/` 필요)
 2. `run.bat` 더블클릭 ─ 브라우저가 열립니다. PPTX 를 올리고 **분석 시작**.
    - 기본 모델은 가벼운 qwen3:8b 라 GPU 없는 PC·메모리 16GB 에서도 실용적입니다.
-   - NVIDIA GPU(VRAM 12GB 이상)가 있는 PC 는 `run_14b.bat` (고품질 qwen3:14b, `ollama pull qwen3:14b` 로 먼저 받기)
 3. 끝나면 **마킹된 PPTX 내려받기**.
 
 ## 빠른 시작 (macOS)
@@ -71,7 +70,7 @@ tests/      점검 스크립트 (모델 없이 돌릴 수 있는 것 포함)
 samples/    연습용 보고서 · 실제 모델로 마킹한 결과 예시
 tools/      오프라인 설치 꾸러미 만들기
 .vscode/    VS Code 설정 (작업 메뉴 · F5 실행)
-setup.*     처음 한 번 설치     run.*   실행 (run_14b.bat = 고품질 모델)     setup_offline.*   인터넷 없이 설치
+setup.*     처음 한 번 설치     run.*   실행     setup_offline.*   인터넷 없이 설치
 ```
 
 ---
@@ -80,7 +79,7 @@ setup.*     처음 한 번 설치     run.*   실행 (run_14b.bat = 고품질 �
 
 | 바꾸고 싶은 것 | 파일 | 항목 |
 |---|---|---|
-| 모델 (고품질로) | `app/config.py` | `MODEL = "qwen3:14b"` (또는 `run_14b.bat` 사용) |
+| 모델 (나중에 업그레이드할 때) | `app/config.py` | `MODEL = "모델명"` (`ollama pull 모델명` 으로 먼저 받기) |
 | 표시 문구 | `app/config.py` | `TAG_TEXT` |
 | 형광펜 색 | `app/config.py` | `GRADE_COLOR` |
 | 단서 표현 추가 (업종 바뀔 때) | `app/lexicon.py` | `RULES`, `NOISE` |

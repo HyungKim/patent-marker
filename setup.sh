@@ -10,7 +10,7 @@
 #    5) 모델(qwen3:8b) 내려받기   ← 약 5GB. 가장 오래 걸리는 단계
 #
 #  사용법      bash setup.sh
-#  모델 변경   PM_MODEL=qwen3:14b bash setup.sh   (고품질 모델, GPU/고사양 PC 용)
+#  모델 변경   PM_MODEL=모델명 bash setup.sh   (나중에 다른 모델로 업그레이드할 때)
 #  오프라인    인터넷이 없는 PC 에서는 setup_offline.sh 를 쓰세요.
 # =============================================================================
 set -u
@@ -104,7 +104,7 @@ else
 fi
 
 # ── 5. 모델 ───────────────────────────────────────────────────
-say "5/5  모델 내려받기 ($MODEL)  ─ 약 9GB, 수 분 ~ 수십 분"
+say "5/5  모델 내려받기 ($MODEL)  ─ 약 5GB, 수 분 ~ 수십 분"
 if "$OLLAMA" list 2>/dev/null | grep -q "^$MODEL"; then
   ok "이미 있음"
 else

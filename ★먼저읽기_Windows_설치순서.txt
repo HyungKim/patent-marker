@@ -9,8 +9,7 @@ GitHub 에서 내려받은 경우 요약:
   1) 초록 Code 버튼 → Download ZIP → C:\ 에 풀기 → 폴더명을 patent_marker 로 변경
   2) setup.bat 더블클릭 (인터넷 필요 · Python·Ollama·모델 5GB 자동 설치)
   3) run.bat 더블클릭 → 브라우저에서 PPTX 올리고 분석 시작
-     (기본 모델은 가벼운 qwen3:8b — GPU 없는 PC 도 이대로 하면 됩니다.
-      VRAM 12GB 이상 NVIDIA GPU 가 있는 PC 는 run_14b.bat 으로 고품질 모델 사용)
+     (기본 모델은 가벼운 qwen3:8b — GPU 없는 PC 도 이대로 하면 됩니다)
 
 USB 로 받은 15GB 압축본(offline_bundle 포함)을 쓰는 경우에는 setup.bat 대신
 setup_offline.bat 을 실행하면 인터넷 없이 설치됩니다.

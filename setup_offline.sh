@@ -8,7 +8,7 @@
 #    offline_bundle/wheels/   파이썬 라이브러리
 #    offline_bundle/python/   python-3.12.x-macos11.pkg   (Python 이 없을 때만 사용)
 #    offline_bundle/ollama/   Ollama-darwin.zip           (Ollama 가 없을 때만 사용)
-#    offline_bundle/models/   모델 파일 (약 14GB, qwen3:8b + qwen3:14b)
+#    offline_bundle/models/   모델 파일 (qwen3:8b · 예전에 만든 꾸러미에는 14b 도 포함)
 #
 #  사용법   bash setup_offline.sh
 # =============================================================================

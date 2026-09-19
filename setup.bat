@@ -13,7 +13,7 @@ REM    4) Ollama 서버 기동
 REM    5) 모델(qwen3:8b) 내려받기  ← 약 5GB. 가장 오래 걸리는 단계
 REM
 REM  사용법     이 파일을 더블클릭  (또는 터미널에서  setup.bat)
-REM  모델 변경  set PM_MODEL=qwen3:14b  입력 후  setup.bat  (고품질 모델, GPU/고사양 PC 용)
+REM  모델 변경  set PM_MODEL=모델명  입력 후  setup.bat  (나중에 다른 모델로 업그레이드할 때)
 REM  오프라인   인터넷이 없는 PC 에서는 setup_offline.bat 을 쓰세요.
 REM =============================================================================
 if "%PM_MODEL%"=="" (set "MODEL=qwen3:8b") else (set "MODEL=%PM_MODEL%")
