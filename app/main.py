@@ -36,11 +36,11 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import analyze, config, extract, mark, merge
+from . import analyze, config, extract, mark, merge, review
 
 # 화면 파일(index.html)이 있는 폴더
 STATIC = Path(__file__).parent / "static"
@@ -138,6 +138,13 @@ def _run(job: Job, opts: config.RunOptions) -> None:
             deck, all_findings, hits_by_seg, include_grade_c=opts.include_grade_c
         )
         job.findings = [f.to_public() for f in resolved]
+
+        # 판정 기록을 자동 저장해 둔다 — [검토 반영] 탭이 검토완료본과 비교할 기준.
+        # 실패해도 분석 자체는 계속한다.
+        try:
+            review.save_archive(deck, resolved)
+        except Exception:
+            traceback.print_exc()
 
         # ── 5단계: PPTX 에 마킹하고 저장 ──────────────────────
         job.stage = "PPTX 마킹 중"
@@ -273,6 +280,62 @@ def job_delete(job_id: str) -> JSONResponse:
         job.cancel.set()
         shutil.rmtree(job.workdir, ignore_errors=True)
     return JSONResponse({"ok": True})
+
+
+# ═════════════════════════════════════════════════════════════════
+# [검토 반영] 탭 ─ 검토완료본 업로드 → 교정 내역 → 사전·예시 보강
+# ═════════════════════════════════════════════════════════════════
+@app.post("/api/review/preview")
+async def review_preview(file: UploadFile) -> JSONResponse:
+    """검토완료 PPTX 를 받아 교정 내역(누락·오탐·등급변경)을 계산해 돌려준다.
+
+    아직 아무것도 저장하지 않는다 — 화면에서 [반영 저장] 을 눌러야 기록된다.
+    """
+    name = file.filename or "reviewed.pptx"
+    if not name.lower().endswith(".pptx"):
+        raise HTTPException(400, "PPTX 파일만 지원합니다.")
+    workdir = Path(tempfile.mkdtemp(prefix="pm-review-"))
+    tmp = workdir / "reviewed.pptx"
+    try:
+        with tmp.open("wb") as fh:
+            shutil.copyfileobj(file.file, fh)
+        reviewed = review.read_reviewed(str(tmp))
+        result = review.diff(reviewed)
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        raise HTTPException(400, f"검토본을 읽지 못했습니다: {type(e).__name__}: {e}")
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    result["filename"] = name
+    result["stats"] = review.stats()
+    return JSONResponse(result)
+
+
+@app.post("/api/review/commit")
+async def review_commit(payload: dict = Body(...)) -> JSONResponse:
+    """미리보기에서 확인한 교정 내역을 데이터셋에 저장하고 프롬프트 예시를 갱신한다."""
+    items = payload.get("items") or []
+    if not items:
+        raise HTTPException(400, "저장할 항목이 없습니다.")
+    st = review.save_dataset(payload.get("filename") or "unknown.pptx",
+                             payload.get("mode") or "archive", items)
+    return JSONResponse({"ok": True, "stats": st})
+
+
+@app.post("/api/review/rule")
+async def review_rule(payload: dict = Body(...)) -> JSONResponse:
+    """[사전에 추가] — 놓친 표현을 규칙 사전에 등록한다. 다음 분석부터 반드시 잡힌다."""
+    try:
+        st = review.add_rule(payload.get("keyword") or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True, "stats": st})
+
+
+@app.get("/api/review/stats")
+def review_stats() -> JSONResponse:
+    """누적 현황 — 데이터 건수·예시 수·추가된 사전 표현 수."""
+    return JSONResponse(review.stats())
 
 
 # /static/... 주소로 static 폴더의 파일을 그대로 내어 준다

@@ -111,6 +111,20 @@ disclosure_risk 를 true 로 둔다. 등급과는 별개 축이며, 출원 기�
 - JSON 만 출력한다."""
 
 
+def _system_prompt() -> str:
+    """업무 지시서 + (있다면) 검토 반영 탭에서 쌓인 '사내 확정 사례' 블록.
+
+    사람이 검토완료본으로 교정한 오탐·누락 사례가 review_data/examples.json 에
+    쌓이면, 여기서 자동으로 프롬프트에 붙어 다음 분석부터 반영됩니다.
+    """
+    try:
+        from . import review
+        block = review.examples_block()
+    except Exception:
+        block = ""
+    return SYSTEM + ("\n\n" + block if block else "")
+
+
 @dataclass
 class Finding:
     """판정 결과 한 건. 모델이 낸 것(source="llm")과 규칙 사전이 구제한 것(source="lexicon")."""
@@ -278,7 +292,7 @@ def _analyze_batch(deck_title: str, slide_no: int, total: int,
     payload = {
         "model": opts.model,                      # 예: qwen3:14b
         "messages": [
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": _system_prompt()},
             {"role": "user",
              "content": _build_user_prompt(deck_title, slide_no, total, segs, hints)},
         ],

@@ -118,6 +118,22 @@ CATEGORIES = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────────
+# 6. 검토 반영 (사전·예시 보강) 데이터
+# ─────────────────────────────────────────────────────────────────
+# 사람이 형광펜을 교정한 '검토완료본' 을 웹 화면의 [검토 반영] 탭에 올리면,
+# 교정 내역이 아래 폴더에 쌓입니다. 이 데이터는 PC 밖으로 나가지 않습니다.
+#   analyses/         분석할 때마다 자동 저장되는 판정 기록 (검토본과 비교용)
+#   dataset.jsonl     확정된 교정 내역 (한 줄 = 한 건)
+#   examples.json     판정 프롬프트에 자동 주입되는 모범답안·반례 모음
+#   extra_rules.json  [사전에 추가] 버튼으로 등록한 표현 (다음 분석부터 반드시 잡음)
+from pathlib import Path as _Path
+
+REVIEW_DIR = _Path(os.environ.get(
+    "PM_REVIEW_DIR", str(_Path(__file__).resolve().parents[1] / "review_data")
+))
+
+
 @dataclass
 class RunOptions:
     """분석을 한 번 실행할 때의 옵션 묶음.

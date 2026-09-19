@@ -273,3 +273,40 @@ def categories_of(hits: list[Hit]) -> list[str]:
 def has_disclosure_risk(hits: list[Hit]) -> bool:
     """실제로 신규성을 깨뜨릴 수 있는 공개 신호가 있는가."""
     return any(h.disclosure for h in hits)
+
+
+# ═════════════════════════════════════════════════════════════════
+# 사용자 추가 규칙 ─ 웹 화면 [검토 반영] 탭의 [사전에 추가] 버튼과 연결
+# ═════════════════════════════════════════════════════════════════
+# review_data/extra_rules.json 에 등록된 표현을 규칙으로 바꿔 RULES 에 붙입니다.
+# 가중치를 안전망 기준(merge.RESCUE_SCORE = 8)과 같게 두어, 등록된 표현이
+# 들어 있는 문단은 모델이 놓쳐도 반드시 후보로 살아남습니다.
+def load_user_rules() -> int:
+    """extra_rules.json 을 (다시) 읽어 사용자 규칙을 갱신한다. 등록 개수를 돌려준다."""
+    import json
+
+    from . import config
+
+    global RULES
+    RULES = [r for r in RULES if not r.rid.startswith("USER_")]
+    path = config.REVIEW_DIR / "extra_rules.json"
+    if not path.exists():
+        return 0
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    n = 0
+    for i, e in enumerate(entries, 1):
+        kw = (e.get("keyword") or "").strip()
+        if len(kw) < 2:
+            continue
+        # 단어 사이 공백은 유연하게 (예: "자체 제작" 이 "자체  제작" 도 잡도록)
+        pattern = r"\s*".join(re.escape(w) for w in kw.split())
+        RULES.append(_r(f"USER_{i}", "사용자추가", 8, pattern,
+                        f"검토 반영으로 추가된 표현: '{kw}'", disclosure=False))
+        n += 1
+    return n
+
+
+load_user_rules()
