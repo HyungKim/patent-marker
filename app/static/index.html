@@ -53,6 +53,40 @@
   .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
   .grow{flex:1;min-width:220px}
 
+  /* ── 탭 (문서 분석 / 검토 반영 / 성능 기록) ──────────────── */
+  .tabs{display:flex;gap:8px;margin-bottom:18px}
+  .tab{border:1px solid var(--line);background:var(--panel);color:var(--muted);
+    border-radius:10px;padding:9px 18px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+  .tab.on{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+
+  /* ── 성능 기록 탭 ────────────────────────────────────────── */
+  .cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:14px}
+  .cmp .card small{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+  .delta{font-size:12px;font-weight:700;border-radius:5px;padding:1px 7px;margin-left:6px}
+  .delta.up{background:rgba(34,197,94,.16);color:#16a34a}
+  .delta.down{background:rgba(232,102,60,.16);color:var(--risk)}
+  .delta.zero{background:rgba(127,127,127,.14);color:var(--muted)}
+  table.ev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  table.ev th,table.ev td{border-bottom:1px solid var(--line);padding:7px 8px;
+    text-align:right;white-space:nowrap}
+  table.ev th{color:var(--muted);font-weight:600;font-size:11.5px}
+  table.ev th:first-child,table.ev td:first-child,
+  table.ev th.l,table.ev td.l{text-align:left}
+  table.ev td.l{white-space:normal}
+  .trend{margin:4px 0 12px}
+  .trow{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11.5px;color:var(--muted)}
+  .trow .bars{flex:1;display:flex;flex-direction:column;gap:2px}
+  .trow .bb,.trow .bc{height:6px;border-radius:99px;min-width:2px}
+  .trow .bb{background:var(--c)} .trow .bc{background:var(--accent)}
+
+  /* ── 검토 반영 항목 표시 ─────────────────────────────────── */
+  .tag.miss{background:var(--a);color:#3a2a00}
+  .tag.fp{background:var(--risk);color:#fff}
+  .tag.re{background:var(--b);color:#04263a}
+  .rulebox{display:inline-flex;gap:6px;align-items:center;margin-top:7px}
+  .rulebox input{min-width:180px}
+  .rulebox button{padding:7px 12px;font-size:12.5px}
+
   /* ── 상태줄 ─────────────────────────────────────────────── */
   #health{display:flex;align-items:center;gap:10px;font-size:13.5px;
     padding:11px 16px;border-radius:10px;border:1px solid var(--line);
@@ -63,11 +97,11 @@
     font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 
   /* ── 파일 놓는 영역 ──────────────────────────────────────── */
-  #drop{border:2px dashed var(--line);border-radius:12px;padding:34px 20px;
+  #drop,#rdrop{border:2px dashed var(--line);border-radius:12px;padding:34px 20px;
     text-align:center;cursor:pointer;transition:.15s;background:var(--panel)}
-  #drop:hover,#drop.over{border-color:var(--accent);background:rgba(45,212,191,.06)}
-  #drop b{display:block;font-size:15.5px;margin-bottom:4px}
-  #drop span{color:var(--muted);font-size:13px}
+  #drop:hover,#drop.over,#rdrop:hover,#rdrop.over{border-color:var(--accent);background:rgba(45,212,191,.06)}
+  #drop b,#rdrop b{display:block;font-size:15.5px;margin-bottom:4px}
+  #drop span,#rdrop span{color:var(--muted);font-size:13px}
   input[type=file]{display:none}
 
   label.opt{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;
@@ -121,6 +155,14 @@
   <!-- 상단 상태줄: health() 가 채움 -->
   <div id="health"><span class="dot" id="hdot"></span><span id="htext">온디바이스 모델 확인 중…</span></div>
 
+  <!-- 탭: 문서 분석 ↔ 검토 반영 -->
+  <div class="tabs">
+    <button class="tab on" id="tabAnalyze">문서 분석</button>
+    <button class="tab" id="tabReview">검토 반영</button>
+    <button class="tab" id="tabEval">성능 기록</button>
+  </div>
+
+  <div id="viewAnalyze">
   <!-- 1. 파일 올리기 + 옵션 -->
   <div class="panel" id="setup">
     <div id="drop">
@@ -163,6 +205,83 @@
       <b>⚠공개</b> 표시는 전시·발표·납품 등으로 신규성이 상실됐을 수 있는 구간이며 출원 기한 확인이 필요합니다.
     </p>
   </div>
+  </div><!-- /viewAnalyze -->
+
+  <!-- ═══════════ 검토 반영 탭 ═══════════ -->
+  <div id="viewReview" class="hide">
+    <div class="panel">
+      <div id="rdrop">
+        <b>검토완료 PPTX 를 여기에 놓거나 클릭해 선택하세요</b>
+        <span>마킹 결과를 사람이 교정한 파일 — 내용은 외부로 전송되지 않습니다</span>
+        <input type="file" id="rfile" accept=".pptx">
+      </div>
+      <p class="note" style="margin-bottom:0">
+        <b>검토 방법</b> — 마킹된 PPTX 를 PowerPoint 로 열어:
+        잘못 잡은 곳은 <b>형광펜을 지우고</b>, 놓친 곳은 <b>새로 칠하고</b>, 등급이 틀리면 <b>색을 바꿔</b> 저장한 뒤 여기에 올립니다.<br>
+        색 규약: <b>노랑 계열 = A</b>(수단이 드러남) · <b>하늘/파랑 계열 = B</b>(묵시) · <b>살구/빨강 계열 = ⚠ 공개 리스크</b>
+        — PowerPoint 기본 형광펜 색을 그대로 써도 됩니다(비슷한 색으로 자동 인식).
+      </p>
+    </div>
+
+    <div class="panel hide" id="rwork"><span class="stage">검토본을 읽고 교정 내역을 계산하는 중…</span></div>
+
+    <div id="rres" class="hide">
+      <div class="cards" id="rcards"></div>
+      <div class="err hide" id="rnote"></div>
+      <div class="row" style="margin-bottom:16px">
+        <button id="rsave">반영 저장</button>
+        <button class="ghost" id="ragain">다른 파일</button>
+        <span class="stage" id="rmsg"></span>
+      </div>
+      <div id="rlist"></div>
+    </div>
+
+    <p class="note" id="rstats"></p>
+    <p class="note">
+      [반영 저장] 을 누르면: ① 교정 기록이 <code>review_data/</code> 에 쌓이고
+      ② 오탐·누락 사례가 판정 프롬프트의 <b>사내 확정 사례</b>로 자동 주입되며
+      ③ [사전에 추가] 한 표현은 다음 분석부터 규칙 사전이 반드시 잡습니다. 전부 이 PC 안에서만 일어납니다.
+    </p>
+  </div><!-- /viewReview -->
+
+  <!-- ═══════════ 성능 기록 탭 ═══════════ -->
+  <div id="viewEval" class="hide">
+    <div class="panel">
+      <div class="row">
+        <div class="grow">
+          <b style="font-size:15.5px">최초 설정 대비 성능 측정</b>
+          <div class="note" style="margin-top:4px;margin-bottom:0">
+            [검토 반영] 으로 쌓인 <b>사람이 확정한 정답</b>을 문제지 삼아,
+            <b>최초 설정</b>(기본 사전·기본 프롬프트·qwen3:8b)과 <b>현재 설정</b>(사전 추가·확정 사례 주입)을
+            같은 문제로 각각 채점해 비교합니다. 문단 묶음마다 모델을 두 번 부르므로 몇 분 걸립니다.
+          </div>
+        </div>
+        <button id="erun">성능 측정 실행</button>
+      </div>
+      <div id="eprog" class="hide">
+        <div id="bar2" style="height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin:14px 0 8px"><i style="display:block;height:100%;width:0;background:var(--accent);transition:width .3s"></i></div>
+        <div class="row"><span class="stage grow" id="estage"></span>
+          <button class="ghost" id="ecancel">중단</button></div>
+      </div>
+      <div class="err hide" id="eerr"></div>
+      <p class="note" id="eset" style="margin-bottom:0"></p>
+    </div>
+
+    <div id="elatest"></div>
+
+    <div class="panel hide" id="ehistwrap">
+      <div class="row" style="margin-bottom:6px">
+        <b class="grow">누적 이력 (회차마다 무엇이 바뀌고 얼마나 좋아졌나)</b>
+        <button class="ghost" id="ecopy">보고용 표 복사</button>
+        <span class="stage" id="ecopymsg"></span>
+      </div>
+      <div class="trend" id="etrend"></div>
+      <div style="overflow-x:auto"><table class="ev" id="ehist"></table></div>
+      <p class="note">문제지(평가셋)는 검토가 쌓일수록 커집니다. 회차끼리 절대값을 직접 비교하기보다
+        <b>같은 회차 안의 "최초 → 현재" 차이(Δ)</b>를 개선 폭으로 읽으세요.
+        이력 원본은 <code>review_data/eval_history.jsonl</code> 에 있습니다.</p>
+    </div>
+  </div><!-- /viewEval -->
 </div>
 
 <script>
@@ -322,6 +441,307 @@ function render(st){
 // HTML 특수문자를 안전하게 표시 (< > & " 가 태그로 해석되지 않도록)
 const esc = s => (s||"").replace(/[&<>"]/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// ═════════════ 검토 반영 탭 ═════════════
+let rdata = null;   // /api/review/preview 의 응답 (교정 내역)
+
+// ── 탭 전환 ──
+function showTab(which){
+  $("#tabAnalyze").classList.toggle("on", which === "a");
+  $("#tabReview").classList.toggle("on", which === "r");
+  $("#tabEval").classList.toggle("on", which === "e");
+  $("#viewAnalyze").classList.toggle("hide", which !== "a");
+  $("#viewReview").classList.toggle("hide", which !== "r");
+  $("#viewEval").classList.toggle("hide", which !== "e");
+  if(which === "r") rstats();
+  if(which === "e") ehistory();
+}
+$("#tabAnalyze").onclick = () => showTab("a");
+$("#tabReview").onclick  = () => showTab("r");
+$("#tabEval").onclick    = () => showTab("e");
+
+// ── 누적 현황 ──
+async function rstats(){
+  try{
+    const s = await (await fetch("/api/review/stats")).json();
+    $("#rstats").innerHTML =
+      `누적 현황 — 교정 데이터 <b>${s.dataset}</b>건 · 프롬프트 주입 예시 <b>${s.examples}</b>개 · ` +
+      `추가된 사전 표현 <b>${s.rules}</b>개 · 보관된 분석 기록 <b>${s.archives}</b>건`;
+  }catch(e){ $("#rstats").textContent = ""; }
+}
+
+// ── 검토본 업로드 ──
+const rdrop = $("#rdrop"), rfile = $("#rfile");
+rdrop.onclick = () => rfile.click();
+rdrop.ondragover = e => { e.preventDefault(); rdrop.classList.add("over"); };
+rdrop.ondragleave = () => rdrop.classList.remove("over");
+rdrop.ondrop = e => {
+  e.preventDefault(); rdrop.classList.remove("over");
+  if(e.dataTransfer.files.length){ rfile.files = e.dataTransfer.files; rupload(); }
+};
+rfile.onchange = rupload;
+
+async function rupload(){
+  const f = rfile.files[0];
+  if(!f) return;
+  $("#rres").classList.add("hide");
+  $("#rwork").classList.remove("hide");
+  const fd = new FormData();
+  fd.append("file", f);
+  try{
+    const r = await fetch("/api/review/preview", {method:"POST", body:fd});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.detail || "읽기 실패");
+    rdata = j;
+    renderReview();
+  }catch(e){
+    $("#rwork").classList.add("hide");
+    alert("검토본을 읽지 못했습니다: " + e.message);
+  }
+}
+
+const RLABEL = {miss:["누락","miss"], fp:["오탐 제거","fp"], regrade:["등급 변경","re"],
+                gold:["확정","B"], match:["일치",""]};
+const RORDER = {miss:0, fp:1, regrade:2, gold:3, match:4};
+
+// ── 교정 내역 그리기 ──
+function renderReview(){
+  $("#rwork").classList.add("hide");
+  $("#rres").classList.remove("hide");
+  $("#rmsg").textContent = "";
+  $("#rsave").disabled = false;
+  const c = rdata.counts;
+
+  const cards = rdata.mode === "archive"
+    ? [[c.match,"일치"],[c.miss,"누락 (모델이 놓침)"],[c.fp,"오탐 (사람이 지움)"],
+       [c.regrade,"등급 변경"],[rdata.agree ?? "-", "일치율 %"]]
+    : [[c.gold,"확정 구간"],[c.fp,"오탐 추정"],[c.miss+c.regrade+c.match,"기타"]];
+  $("#rcards").innerHTML = cards
+    .map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
+
+  const nb = $("#rnote");
+  if(rdata.mode === "fallback"){
+    nb.textContent = "이 파일의 분석 기록이 이 PC 에 없어 축소 모드로 동작합니다 — "
+      + "형광펜 구간은 '확정'으로, 형광펜 없이 남은 【특허검토필요】 문구는 '오탐 추정'으로 수집합니다.";
+    nb.classList.remove("hide");
+  } else nb.classList.add("hide");
+
+  const rows = [...rdata.items].sort((a,b) => RORDER[a.type]-RORDER[b.type]);
+  $("#rlist").innerHTML = rows.length ? rows.map((it,i) => {
+    const [label, cls] = RLABEL[it.type] || [it.type,""];
+    const border = it.risk ? "risk" : (it.grade ? "g"+it.grade : "gC");
+    const tags = [`<span class="tag ${cls}">${label}</span>`];
+    if(it.grade) tags.push(`<span class="tag ${it.grade}">${it.grade}</span>`);
+    if(it.risk) tags.push(`<span class="tag R">⚠ 공개</span>`);
+    if(it.type === "regrade")
+      tags.push(`<span class="tag">모델 판정: ${it.from_grade}${it.from_risk?"·⚠":""}</span>`);
+    if(it.lexicon_gap) tags.push(`<span class="tag">사전 미포착</span>`);
+    const rule = it.lexicon_gap
+      ? `<div class="rulebox"><input type="text" id="rk${i}" value="${esc((it.quote||"").slice(0,30))}">
+         <button class="ghost" onclick="addRule(${i})">사전에 추가</button>
+         <span class="stage" id="rkmsg${i}"></span></div>`
+      : "";
+    return `<div class="find ${border}">
+      <div class="meta">${tags.join("")}<span>p${it.slide}</span></div>
+      <q>${esc(it.quote)}</q>
+      <p>${esc(it.snippet)}</p>${rule}</div>`;
+  }).join("") : `<div class="empty">형광펜 구간을 찾지 못했습니다. 색 규약대로 칠했는지 확인하세요.</div>`;
+}
+
+// ── [사전에 추가] ──
+async function addRule(i){
+  const kw = $(`#rk${i}`).value.trim();
+  const msg = $(`#rkmsg${i}`);
+  try{
+    const r = await fetch("/api/review/rule", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({keyword:kw})});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.detail || "실패");
+    msg.textContent = "등록됨 ✓ (다음 분석부터 반드시 잡습니다)";
+    rstats();
+  }catch(e){ msg.textContent = "실패: " + e.message; }
+}
+
+// ── [반영 저장] ──
+$("#rsave").onclick = async () => {
+  if(!rdata) return;
+  $("#rsave").disabled = true;
+  try{
+    const r = await fetch("/api/review/commit", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({filename:rdata.filename, mode:rdata.mode, items:rdata.items})});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.detail || "저장 실패");
+    $("#rmsg").textContent = "저장 완료 — 다음 분석부터 프롬프트 예시에 반영됩니다.";
+    rstats();
+  }catch(e){
+    $("#rsave").disabled = false;
+    $("#rmsg").textContent = "저장 실패: " + e.message;
+  }
+};
+$("#ragain").onclick = () => {
+  rdata = null; rfile.value = "";
+  $("#rres").classList.add("hide");
+};
+
+// ═════════════ 성능 기록 탭 ═════════════
+let eTimer = null, eEntries = [];
+
+// 지표 표시: 값이 없으면(분모 0) 대시
+const fmt = v => v == null ? "–" : v + "%";
+const fmtD = v => v == null ? "" :
+  `<span class="delta ${v > 0 ? "up" : v < 0 ? "down" : "zero"}">${v > 0 ? "+" : ""}${v}%p</span>`;
+
+// 회차의 "직전 대비 변경 내역" 을 사람이 읽는 문장으로
+function changesText(e){
+  const c = e.changes;
+  if(!c) return "첫 측정 (기준점)";
+  const parts = [];
+  if(c.rules_added?.length) parts.push(`사전 +${c.rules_added.length} (${c.rules_added.slice(0,3).map(esc).join(", ")}${c.rules_added.length>3?" 외":""})`);
+  if(c.rules_removed?.length) parts.push(`사전 −${c.rules_removed.length}`);
+  if(c.examples_delta) parts.push(`주입 예시 ${c.examples_delta>0?"+":""}${c.examples_delta}`);
+  if(c.dataset_delta) parts.push(`교정 데이터 ${c.dataset_delta>0?"+":""}${c.dataset_delta}건`);
+  if(c.model_change) parts.push(`모델 ${esc(c.model_change)}`);
+  return parts.length ? parts.join(" · ") : "설정 변경 없음";
+}
+
+// ── 이력 불러와 그리기 ──
+async function ehistory(){
+  try{
+    const j = await (await fetch("/api/eval/history")).json();
+    eEntries = j.entries || [];
+    const s = j.eval_set || {};
+    $("#eset").innerHTML = s.paras
+      ? `현재 문제지 — 문단 <b>${s.paras}</b>개 · 확정 정답 <b>${s.golds}</b>구간 · ` +
+        `오탐 확인용 문단 ${s.neg_only}개 · 출처 검토파일 ${s.files}개 · 측정 이력 <b>${eEntries.length}</b>회`
+      : `아직 문제지가 없습니다 — 먼저 [검토 반영] 탭에서 검토완료본을 올려 [반영 저장] 을 해 주세요.`;
+    $("#erun").disabled = !s.paras;
+    renderLatest();
+    renderHist();
+  }catch(err){ $("#eset").textContent = ""; }
+}
+
+// ── 최신 회차: 최초 vs 현재 비교 카드 ──
+function renderLatest(){
+  const e = eEntries[eEntries.length-1];
+  if(!e){ $("#elatest").innerHTML = ""; return; }
+  const b = e.baseline, c = e.current, d = e.delta, fx = e.fixes || {};
+  const row = (label, bv, cv, dv) =>
+    `<div class="card"><span>${label}</span><b style="font-size:20px">${fmt(cv)}${fmtD(dv)}</b>
+     <small>최초 설정: ${fmt(bv)}</small></div>`;
+  const fixParts = [];
+  if(fx.miss_fixed) fixParts.push(`최초가 놓친 정답 <b>${fx.miss_fixed}건</b>을 현재는 잡음`);
+  if(fx.fp_fixed) fixParts.push(`최초의 오탐 <b>${fx.fp_fixed}건</b>이 사라짐`);
+  if(fx.regressed) fixParts.push(`<span style="color:var(--risk)">퇴행 ${fx.regressed}건 (최초는 잡던 것을 놓침)</span>`);
+  if(fx.new_fp) fixParts.push(`<span style="color:var(--risk)">새 오탐 ${fx.new_fp}건</span>`);
+  const quotes = (fx.miss_fixed_quotes||[]).slice(0,4).map(q=>`“${esc(q)}”`).join(" · ");
+  const still = (fx.still_miss_quotes||[]).slice(0,4).map(q=>`“${esc(q)}”`).join(" · ");
+  $("#elatest").innerHTML = `
+  <div class="panel">
+    <b>${e.run_no}회차 결과 — ${esc((e.ts||"").slice(0,10))} · ${changesText(e)}</b>
+    <div class="cmp" style="margin-top:12px">
+      ${row("재현율 (누락 없이 잡음)", b.recall, c.recall, d.recall)}
+      ${row("정밀도 (헛짚지 않음)", b.precision, c.precision, d.precision)}
+      ${row("F1 (종합)", b.f1, c.f1, d.f1)}
+      ${row("등급 일치율", b.grade_acc, c.grade_acc, null)}
+    </div>
+    <p class="note" style="margin-top:2px">
+      ${fixParts.length ? "개선 내용: " + fixParts.join(" · ") + "." : "이번 회차에는 최초 설정과 항목 차이가 없습니다."}
+      ${quotes ? `<br>새로 잡게 된 예: ${quotes}` : ""}
+      ${still ? `<br>아직 놓치는 예: ${still} — [검토 반영] 에서 [사전에 추가] 를 활용하세요.` : ""}
+      ${b.fallback ? `<br>※ 이 PC 에 qwen3:8b 가 없어 최초 설정도 ${esc(b.model)} 로 채점했습니다.` : ""}
+    </p>
+  </div>`;
+}
+
+// ── 누적 이력 표 + 추이 막대 ──
+function renderHist(){
+  const wrap = $("#ehistwrap");
+  if(!eEntries.length){ wrap.classList.add("hide"); return; }
+  wrap.classList.remove("hide");
+  $("#etrend").innerHTML = eEntries.map(e => `
+    <div class="trow"><span style="width:38px">${e.run_no}회</span>
+      <div class="bars">
+        <i class="bb" style="width:${e.baseline.f1 ?? 0}%"></i>
+        <i class="bc" style="width:${e.current.f1 ?? 0}%"></i>
+      </div>
+      <span style="width:110px">F1 ${fmt(e.baseline.f1)} → ${fmt(e.current.f1)}</span></div>`).join("")
+    + `<div class="trow"><span style="width:38px"></span><span>회색 = 최초 설정 · 청록 = 현재 설정</span></div>`;
+
+  $("#ehist").innerHTML =
+    `<tr><th>회차</th><th class="l">날짜</th><th>문제지</th><th class="l">변경 내역</th>
+     <th>재현율</th><th>정밀도</th><th>F1</th><th>등급</th><th>ΔF1</th></tr>` +
+    eEntries.map(e => `<tr>
+      <td>${e.run_no}</td><td class="l">${esc((e.ts||"").slice(0,10))}</td>
+      <td>${e.eval_set.golds}구간</td>
+      <td class="l">${changesText(e)}</td>
+      <td>${fmt(e.baseline.recall)} → <b>${fmt(e.current.recall)}</b></td>
+      <td>${fmt(e.baseline.precision)} → <b>${fmt(e.current.precision)}</b></td>
+      <td>${fmt(e.baseline.f1)} → <b>${fmt(e.current.f1)}</b></td>
+      <td>${fmt(e.current.grade_acc)}</td>
+      <td>${fmtD(e.delta.f1) || "–"}</td></tr>`).join("");
+}
+
+// ── [성능 측정 실행] ──
+$("#erun").onclick = async () => {
+  $("#eerr").classList.add("hide");
+  try{
+    const r = await fetch("/api/eval/run", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:"{}"});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.detail || "시작 실패");
+    $("#erun").disabled = true;
+    $("#eprog").classList.remove("hide");
+    eTimer = setInterval(epoll, 1200);
+    epoll();
+  }catch(err){
+    $("#eerr").textContent = err.message;
+    $("#eerr").classList.remove("hide");
+  }
+};
+
+async function epoll(){
+  try{
+    const s = await (await fetch("/api/eval/status")).json();
+    const pct = s.total ? Math.round(s.done / s.total * 100) : 3;
+    $("#bar2>i").style.width = Math.max(pct,3) + "%";
+    $("#estage").textContent = s.total
+      ? `${s.stage} — 문단 묶음 ${s.done}/${s.total}` : s.stage;
+    if(!s.running){
+      clearInterval(eTimer);
+      $("#eprog").classList.add("hide");
+      $("#erun").disabled = false;
+      if(s.error){ $("#eerr").textContent = s.error; $("#eerr").classList.remove("hide"); }
+      ehistory();
+    }
+  }catch(err){ /* 서버 재시작 등 — 다음 폴링에서 재시도 */ }
+}
+
+$("#ecancel").onclick = () => fetch("/api/eval/cancel", {method:"POST"});
+
+// ── [보고용 표 복사] : 마크다운 표를 클립보드로 ──
+$("#ecopy").onclick = async () => {
+  const rows = [
+    "| 회차 | 날짜 | 문제지(정답) | 변경 내역 | 재현율(최초→현재) | 정밀도(최초→현재) | F1(최초→현재) | ΔF1 |",
+    "|---|---|---|---|---|---|---|---|",
+    ...eEntries.map(e => `| ${e.run_no} | ${(e.ts||"").slice(0,10)} | ${e.eval_set.golds}구간 | ` +
+      `${changesText(e).replace(/<[^>]*>/g,"")} | ${fmt(e.baseline.recall)} → ${fmt(e.current.recall)} | ` +
+      `${fmt(e.baseline.precision)} → ${fmt(e.current.precision)} | ` +
+      `${fmt(e.baseline.f1)} → ${fmt(e.current.f1)} | ${e.delta.f1 == null ? "–" : (e.delta.f1>0?"+":"")+e.delta.f1+"%p"} |`),
+    "",
+    "※ 같은 회차 안에서 최초 설정과 현재 설정을 동일 문제지(사내 검토로 확정된 정답)로 채점한 결과.",
+  ].join("\n");
+  try{
+    await navigator.clipboard.writeText(rows);
+    $("#ecopymsg").textContent = "복사됨 ✓";
+  }catch(err){
+    const ta = document.createElement("textarea");
+    ta.value = rows; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+    $("#ecopymsg").textContent = "복사됨 ✓";
+  }
+  setTimeout(() => $("#ecopymsg").textContent = "", 2500);
+};
 
 health();   // 화면이 열리면 바로 상태 확인
 </script>
