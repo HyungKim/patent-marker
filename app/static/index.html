@@ -728,6 +728,14 @@ function timelineItems(){
     } else if(c.kind === "rule_add"){
       items.push({ts: c.ts, html:
         `<span class="tag">사전</span> “${esc(c.keyword)}” 등록 — 다음 분석부터 반드시 잡음 (사전 표현 ${c.rules_after}개)`});
+    } else if(c.kind === "examples_recovered" || c.kind === "rules_recovered"){
+      // 파일이 깨져 옆으로 치운 일. 이 줄이 없으면 '쌓인 예시'가 갑자기 준 이유를
+      // 화면 어디서도 알 수 없다 (기록은 change_log.jsonl 에 남는다).
+      const what = c.kind === "examples_recovered" ? "쌓인 예시" : "사전 표현";
+      items.push({ts: c.ts, html:
+        `<span class="tag fp">복구</span> ${what} 파일이 손상되어 ` +
+        (c.moved_to ? `<code>${esc(c.moved_to)}</code> 로 옮겨 두고 ` : "") +
+        `새로 시작했습니다 — 손상된 파일은 지우지 말고 그대로 두세요 (docs/03 참고)`});
     }
   }
   for(const e of eEntries){
