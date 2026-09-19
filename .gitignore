@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 out_*.pptx
 offline_bundle/
+review_data/
