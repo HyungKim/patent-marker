@@ -13,6 +13,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Windows 명령 프롬프트는 글자를 cp949 로 내보내는데, 아래 출력에 쓰는 '—' 같은
+# 글자가 cp949 에 없어서 결과를 파일로 넘기면(> log.txt) 도중에 죽어 버린다.
+# 검사 내용과는 무관한 사고라, 출력만 utf-8 로 고정해 둔다.
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:      # noqa: BLE001  (예전 파이썬·특수 환경에서는 그냥 넘어간다)
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # review 데이터가 실제 review_data/ 를 건드리지 않도록, import 전에 임시 폴더로 돌린다
