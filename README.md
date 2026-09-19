@@ -13,13 +13,19 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
 
 ## 빠른 시작 (Windows)
 
-0. GitHub 에서 받은 경우: 초록 **Code → Download ZIP** → `C:\` 에 풀고 폴더명을 `patent_marker` 로 변경.
+0. GitHub 에서 받은 경우 **(처음 설치할 때만)**: 초록 **Code → Download ZIP** → `C:\` 에 풀고 폴더명을 `patent_marker` 로 변경.
    (저장소에는 15GB `offline_bundle` 이 없으므로 아래 `setup.bat` 온라인 설치를 사용합니다)
 1. `setup.bat` 더블클릭 ─ 처음 한 번. Python·Ollama·모델(5GB)을 자동 설치합니다. (인터넷 필요)
    - 인터넷이 없는 PC 라면 `setup_offline.bat` (미리 만든 `offline_bundle/` 필요)
 2. `run.bat` 더블클릭 ─ 브라우저가 열립니다. PPTX 를 올리고 **분석 시작**.
    - 기본 모델은 가벼운 qwen3:8b 라 GPU 없는 PC·메모리 16GB 에서도 실용적입니다.
 3. 끝나면 **마킹된 PPTX 내려받기**.
+
+> **이미 설치한 PC 를 새 버전으로 바꾸려면** — 위 0 번(`C:\` 에 풀고 이름 변경)을 따라 하면 안 됩니다.
+> 프로그램을 완전히 끄고 → Download ZIP → 풀린 `patent-marker-main` **폴더 안의 내용물 전부**를
+> 기존 `C:\patent_marker` 에 덮어쓰기 → `run.bat` 다시 실행.
+> `setup.bat` 재실행 불필요, `review_data/` 와 `.venv/` 는 그대로 보존됩니다.
+> 자세한 순서와 확인 방법 → [docs/00_Windows_따라하기_가이드.md](docs/00_Windows_따라하기_가이드.md) 의 **[7-1] 새 버전으로 바꾸기**
 
 ## 빠른 시작 (macOS)
 
@@ -64,7 +70,7 @@ bash run.sh
 ## 폴더 구성
 
 ```
-app/        프로그램 본체 (config → extract → lexicon → analyze → merge → mark, review, main)
+app/        프로그램 본체 (config → extract → lexicon → analyze → merge → mark, review, evaluate, main)
 review_data/  검토 반영으로 쌓이는 교정 데이터 (자동 생성, 저장소에는 미포함)
 docs/       구조 설명 · 설치/이전 안내 · 발표자료(pptx)
 tests/      점검 스크립트 (모델 없이 돌릴 수 있는 것 포함)
