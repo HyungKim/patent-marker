@@ -13,7 +13,9 @@
 #    offline_bundle/wheels/   파이썬 라이브러리 (대상 OS 용)
 #    offline_bundle/python/   Python 3.12 설치 파일
 #    offline_bundle/ollama/   Ollama 설치 파일
-#    offline_bundle/models/   ~/.ollama/models 복사본 (qwen3:14b + qwen3:8b, 약 14GB)
+#    offline_bundle/models/   ~/.ollama/models 복사본 (qwen3:8b, 약 5GB)
+#      ※ 이 Mac 에 받아 둔 모델이 전부 들어갑니다. 8b 만 담아 용량을 줄이려면
+#         먼저 터미널에서  ollama rm qwen3:14b  로 쓰지 않는 모델을 지우세요.
 #    offline_bundle/README.txt
 # =============================================================================
 set -euo pipefail
@@ -69,9 +71,9 @@ else
 fi
 
 # ── 4. 모델 파일 ──────────────────────────────────────────────
-say "4/4  모델 파일 복사  (~/.ollama/models → $OUT/models, 약 9GB)"
+say "4/4  모델 파일 복사  (~/.ollama/models → $OUT/models, 약 5GB)"
 SRC="${OLLAMA_MODELS:-$HOME/.ollama/models}"
-[ -d "$SRC/manifests" ] || die "$SRC 에 모델이 없습니다. 먼저 'ollama pull qwen3:14b' 를 하세요."
+[ -d "$SRC/manifests" ] || die "$SRC 에 모델이 없습니다. 먼저 'ollama pull qwen3:8b' 를 하세요."
 rsync -a "$SRC/" "$OUT/models/" || cp -R "$SRC/." "$OUT/models/"
 
 cat > "$OUT/README.txt" <<TXT
@@ -83,7 +85,7 @@ cat > "$OUT/README.txt" <<TXT
 를 실행하면 인터넷 없이 설치가 끝납니다.
 
 wheels/  파이썬 라이브러리      python/  Python $PYVER 설치 파일
-ollama/  Ollama 설치 파일       models/  qwen3:14b 모델 (약 9GB)
+ollama/  Ollama 설치 파일       models/  qwen3:8b 모델 (약 5GB)
 TXT
 
 printf '\n\033[1;32m완료.  크기: %s\033[0m\n' "$(du -sh "$OUT" | cut -f1)"
