@@ -86,6 +86,9 @@
   .rulebox{display:inline-flex;gap:6px;align-items:center;margin-top:7px}
   .rulebox input{min-width:180px}
   .rulebox button{padding:7px 12px;font-size:12.5px}
+  .fhead{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;
+    margin:16px 0 8px;font-weight:700;font-size:13.5px}
+  .fhead:first-child{margin-top:0}
 
   /* ── 상태줄 ─────────────────────────────────────────────── */
   #health{display:flex;align-items:center;gap:10px;font-size:13.5px;
@@ -211,9 +214,9 @@
   <div id="viewReview" class="hide">
     <div class="panel">
       <div id="rdrop">
-        <b>검토완료 PPTX 를 여기에 놓거나 클릭해 선택하세요</b>
+        <b>검토완료 PPTX 를 여기에 놓거나 클릭해 선택하세요 (여러 개 한꺼번에 가능)</b>
         <span>마킹 결과를 사람이 교정한 파일 — 내용은 외부로 전송되지 않습니다</span>
-        <input type="file" id="rfile" accept=".pptx">
+        <input type="file" id="rfile" accept=".pptx" multiple>
       </div>
       <p class="note" style="margin-bottom:0">
         <b>검토 방법</b> — 마킹된 PPTX 를 PowerPoint 로 열어:
@@ -443,7 +446,8 @@ const esc = s => (s||"").replace(/[&<>"]/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 // ═════════════ 검토 반영 탭 ═════════════
-let rdata = null;   // /api/review/preview 의 응답 (교정 내역)
+let rdata = null;    // /api/review/preview 의 응답 {files:[...], stats}
+let rvalid = [];     // 그중 실제로 반영할 파일들 (오류·중복·빈 파일 제외)
 
 // ── 탭 전환 ──
 function showTab(which){
@@ -482,12 +486,12 @@ rdrop.ondrop = e => {
 rfile.onchange = rupload;
 
 async function rupload(){
-  const f = rfile.files[0];
-  if(!f) return;
+  const fl = [...rfile.files];
+  if(!fl.length) return;
   $("#rres").classList.add("hide");
   $("#rwork").classList.remove("hide");
   const fd = new FormData();
-  fd.append("file", f);
+  fl.forEach(f => fd.append("files", f));      // 여러 개를 한 요청에 담는다
   try{
     const r = await fetch("/api/review/preview", {method:"POST", body:fd});
     const j = await r.json();
@@ -504,48 +508,71 @@ const RLABEL = {miss:["누락","miss"], fp:["오탐 제거","fp"], regrade:["등
                 gold:["확정","B"], match:["일치",""]};
 const RORDER = {miss:0, fp:1, regrade:2, gold:3, match:4};
 
-// ── 교정 내역 그리기 ──
+// ── 교정 내역 그리기 (파일별 묶음) ──
 function renderReview(){
   $("#rwork").classList.add("hide");
   $("#rres").classList.remove("hide");
   $("#rmsg").textContent = "";
-  $("#rsave").disabled = false;
-  const c = rdata.counts;
+  const all = rdata.files || [];
+  rvalid = all.filter(f => !f.error && !f.duplicate_of && (f.items||[]).length);
+  $("#rsave").disabled = rvalid.length === 0;
 
-  const cards = rdata.mode === "archive"
-    ? [[c.match,"일치"],[c.miss,"누락 (모델이 놓침)"],[c.fp,"오탐 (사람이 지움)"],
-       [c.regrade,"등급 변경"],[rdata.agree ?? "-", "일치율 %"]]
-    : [[c.gold,"확정 구간"],[c.fp,"오탐 추정"],[c.miss+c.regrade+c.match,"기타"]];
-  $("#rcards").innerHTML = cards
-    .map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
+  // 위쪽 집계 카드: 반영 대상 파일들의 합계
+  const sum = k => rvalid.reduce((a,f) => a + (f.counts[k]||0), 0);
+  $("#rcards").innerHTML = [
+    [rvalid.length, "반영할 파일"],
+    [sum("miss"), "누락 (모델이 놓침)"],
+    [sum("fp"), "오탐 (사람이 지움)"],
+    [sum("regrade"), "등급 변경"],
+    [sum("match")+sum("gold"), "일치·확정"],
+  ].map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
 
+  // 파일별 안내·경고
+  const warns = [];
+  for(const f of all){
+    if(f.error)
+      warns.push(`⚠ ${esc(f.filename)} — 읽지 못했습니다 (${esc(f.error)}). 이 파일만 제외합니다.`);
+    else if(f.duplicate_of)
+      warns.push(`⚠ ${esc(f.filename)} — ${esc(f.duplicate_of)} 와 같은 문서입니다. 교정이 서로 다를 수 있어 한 번에 한 벌만 반영합니다 (이 파일 제외 — 필요하면 저장 후 따로 올리세요).`);
+    else if(!(f.items||[]).length)
+      warns.push(`⚠ ${esc(f.filename)} — 형광펜 구간이 없습니다. 검토완료본이 맞는지 확인하세요 (제외).`);
+    else if(f.mode === "fallback")
+      warns.push(`ℹ ${esc(f.filename)} — 분석 기록이 없어 축소 모드: 형광펜은 '확정', 고아 【특허검토필요】 문구는 '오탐 추정'으로 수집합니다.`);
+  }
   const nb = $("#rnote");
-  if(rdata.mode === "fallback"){
-    nb.textContent = "이 파일의 분석 기록이 이 PC 에 없어 축소 모드로 동작합니다 — "
-      + "형광펜 구간은 '확정'으로, 형광펜 없이 남은 【특허검토필요】 문구는 '오탐 추정'으로 수집합니다.";
-    nb.classList.remove("hide");
-  } else nb.classList.add("hide");
+  if(warns.length){ nb.innerHTML = warns.join("<br>"); nb.classList.remove("hide"); }
+  else nb.classList.add("hide");
 
-  const rows = [...rdata.items].sort((a,b) => RORDER[a.type]-RORDER[b.type]);
-  $("#rlist").innerHTML = rows.length ? rows.map((it,i) => {
-    const [label, cls] = RLABEL[it.type] || [it.type,""];
-    const border = it.risk ? "risk" : (it.grade ? "g"+it.grade : "gC");
-    const tags = [`<span class="tag ${cls}">${label}</span>`];
-    if(it.grade) tags.push(`<span class="tag ${it.grade}">${it.grade}</span>`);
-    if(it.risk) tags.push(`<span class="tag R">⚠ 공개</span>`);
-    if(it.type === "regrade")
-      tags.push(`<span class="tag">모델 판정: ${it.from_grade}${it.from_risk?"·⚠":""}</span>`);
-    if(it.lexicon_gap) tags.push(`<span class="tag">사전 미포착</span>`);
-    const rule = it.lexicon_gap
-      ? `<div class="rulebox"><input type="text" id="rk${i}" value="${esc((it.quote||"").slice(0,30))}">
-         <button class="ghost" onclick="addRule(${i})">사전에 추가</button>
-         <span class="stage" id="rkmsg${i}"></span></div>`
-      : "";
-    return `<div class="find ${border}">
-      <div class="meta">${tags.join("")}<span>p${it.slide}</span></div>
-      <q>${esc(it.quote)}</q>
-      <p>${esc(it.snippet)}</p>${rule}</div>`;
-  }).join("") : `<div class="empty">형광펜 구간을 찾지 못했습니다. 색 규약대로 칠했는지 확인하세요.</div>`;
+  // 항목 목록: 파일 머리글 + 그 파일의 교정 항목
+  let idx = 0, html = "";
+  for(const f of rvalid){
+    const meta = f.mode === "archive"
+      ? `기록 대조${f.agree != null ? ` · 일치율 ${f.agree}%` : ""}` : "축소 모드";
+    html += `<div class="fhead">${esc(f.filename)}<span class="stage">${meta} · ${f.items.length}건</span></div>`;
+    const rows = [...f.items].sort((a,b) => RORDER[a.type]-RORDER[b.type]);
+    for(const it of rows){
+      const i = idx++;
+      const [label, cls] = RLABEL[it.type] || [it.type,""];
+      const border = it.risk ? "risk" : (it.grade ? "g"+it.grade : "gC");
+      const tags = [`<span class="tag ${cls}">${label}</span>`];
+      if(it.grade) tags.push(`<span class="tag ${it.grade}">${it.grade}</span>`);
+      if(it.risk) tags.push(`<span class="tag R">⚠ 공개</span>`);
+      if(it.type === "regrade")
+        tags.push(`<span class="tag">모델 판정: ${it.from_grade}${it.from_risk?"·⚠":""}</span>`);
+      if(it.lexicon_gap) tags.push(`<span class="tag">사전 미포착</span>`);
+      const rule = it.lexicon_gap
+        ? `<div class="rulebox"><input type="text" id="rk${i}" value="${esc((it.quote||"").slice(0,30))}">
+           <button class="ghost" onclick="addRule(${i})">사전에 추가</button>
+           <span class="stage" id="rkmsg${i}"></span></div>`
+        : "";
+      html += `<div class="find ${border}">
+        <div class="meta">${tags.join("")}<span>p${it.slide}</span></div>
+        <q>${esc(it.quote)}</q>
+        <p>${esc(it.snippet)}</p>${rule}</div>`;
+    }
+  }
+  $("#rlist").innerHTML = html
+    || `<div class="empty">반영할 형광펜 구간을 찾지 못했습니다. 색 규약대로 칠했는지 확인하세요.</div>`;
 }
 
 // ── [사전에 추가] ──
@@ -562,17 +589,19 @@ async function addRule(i){
   }catch(e){ msg.textContent = "실패: " + e.message; }
 }
 
-// ── [반영 저장] ──
+// ── [반영 저장] ── 반영 대상 파일 전부를 한 번에 저장
 $("#rsave").onclick = async () => {
-  if(!rdata) return;
+  if(!rvalid.length) return;
   $("#rsave").disabled = true;
   try{
     const r = await fetch("/api/review/commit", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({filename:rdata.filename, mode:rdata.mode, items:rdata.items})});
+      body:JSON.stringify({files: rvalid.map(f =>
+        ({filename:f.filename, mode:f.mode, items:f.items}))})});
     const j = await r.json();
     if(!r.ok) throw new Error(j.detail || "저장 실패");
-    $("#rmsg").textContent = "저장 완료 — 다음 분석부터 프롬프트 예시에 반영됩니다.";
+    $("#rmsg").textContent =
+      `저장 완료 — 파일 ${j.saved_files}개 · ${j.saved_items}건. 다음 분석부터 프롬프트 예시에 반영됩니다.`;
     rstats();
   }catch(e){
     $("#rsave").disabled = false;
