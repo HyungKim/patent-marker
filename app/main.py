@@ -316,28 +316,20 @@ async def review_preview(files: list[UploadFile] = File(default=[]),
 
 @app.post("/api/review/commit")
 async def review_commit(payload: dict = Body(...)) -> JSONResponse:
-    """미리보기에서 확인한 교정 내역을 데이터셋에 저장하고 프롬프트 예시를 갱신한다.
+    """미리보기에서 확인한 교정 내역을 저장하고, 무엇이 바뀌었는지 리포트를 돌려준다.
 
     여러 파일을 한 번에 받는다: {"files": [{filename, mode, items}, ...]}.
     예전 단일 형식 {filename, mode, items} 도 그대로 동작한다.
+    응답의 change = 반영 전후 변화 요약 (변경 일지에도 같은 내용이 쌓인다).
     """
     batches = payload.get("files")
     if batches is None:                # 예전 단일 파일 형식
         batches = [payload]
-    saved_files = saved_items = 0
-    st = review.stats()
-    for b in batches:
-        items = b.get("items") or []
-        if not items:
-            continue
-        st = review.save_dataset(b.get("filename") or "unknown.pptx",
-                                 b.get("mode") or "archive", items)
-        saved_files += 1
-        saved_items += len(items)
-    if not saved_items:
-        raise HTTPException(400, "저장할 항목이 없습니다.")
-    return JSONResponse({"ok": True, "saved_files": saved_files,
-                         "saved_items": saved_items, "stats": st})
+    try:
+        result = review.commit_with_log(batches)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True, **result})
 
 
 @app.post("/api/review/rule")
@@ -384,8 +376,9 @@ def eval_cancel() -> JSONResponse:
 
 @app.get("/api/eval/history")
 def eval_history() -> JSONResponse:
-    """누적 측정 이력 + 현재 평가셋 규모. [성능 기록] 탭이 그린다."""
+    """누적 측정 이력 + 변경 일지 + 현재 평가셋 규모. [성능 기록] 탭이 그린다."""
     return JSONResponse({"entries": evaluate.history(),
+                         "changes": review.change_log(),
                          "eval_set": evaluate.eval_set_summary(),
                          "stats": review.stats()})
 

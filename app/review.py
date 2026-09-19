@@ -12,10 +12,13 @@ review.py ─ 검토완료본을 읽어 "사람의 교정" 을 학습 재료로 
                                                         ├─ 등급변경: 색을 바꿈
                                                         └─ 일치   : 그대로 둠
 
-  [반영 저장] 을 누르면 세 곳에 자동으로 쌓입니다.
-    1. dataset.jsonl   — 교정 기록 원본 (나중에 미세조정 재료)
-    2. examples.json   — 판정 프롬프트에 주입되는 모범답안·반례 (analyze.py 가 읽음)
-    3. extra_rules.json— [사전에 추가] 로 등록한 표현 (lexicon.py 가 읽음)
+  [반영 저장] 을 누르면 네 곳에 자동으로 쌓입니다.
+    1. dataset.jsonl    — 교정 기록 원본 (나중에 미세조정 재료)
+    2. examples.json    — 판정 프롬프트에 주입되는 모범답안·반례 (analyze.py 가 읽음)
+    3. extra_rules.json — [사전에 추가] 로 등록한 표현 (lexicon.py 가 읽음)
+    4. change_log.jsonl — 이번 반영으로 "무엇이 어디서 바뀌었는지" 변경 일지.
+                          저장 직후 화면에 리포트로 뜨고, [성능 기록] 탭의
+                          개선 타임라인에서 측정 결과와 함께 계속 볼 수 있습니다.
 
 [검토자의 형광펜 색 규약]
   노랑 계열 = A (구체 수단 드러남) · 하늘/파랑 계열 = B (묵시) · 살구/빨강 계열 = ⚠ 공개 리스크
@@ -73,6 +76,10 @@ def _examples_path() -> Path:
 
 def _rules_path() -> Path:
     return _dir() / "extra_rules.json"
+
+
+def _changelog_path() -> Path:
+    return _dir() / "change_log.jsonl"
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -418,6 +425,101 @@ def _curate_examples(items: list[dict], keep: int = 12) -> None:
                                 encoding="utf-8")
 
 
+# ═════════════════════════════════════════════════════════════════
+# 5.5 변경 일지 ─ 반영 전후로 무엇이 어디서 바뀌었는지 기록
+# ═════════════════════════════════════════════════════════════════
+def _examples_pool() -> list[dict]:
+    try:
+        return json.loads(_examples_path().read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _injected(pool: list[dict]) -> list[dict]:
+    """프롬프트에 실제로 주입되는 부분 (examples_block 과 같은 선별: 반례 4 + 정답 4)."""
+    excl = [e for e in pool if e.get("kind") == "exclude"][:4]
+    incl = [e for e in pool if e.get("kind") == "include"][:4]
+    return [{"kind": e["kind"], "quote": e["quote"],
+             "grade": e.get("grade"), "risk": bool(e.get("risk"))}
+            for e in excl + incl]
+
+
+def _append_log(entry: dict) -> None:
+    _dir()
+    with _changelog_path().open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def change_log() -> list[dict]:
+    """쌓인 변경 일지 전체. [성능 기록] 탭의 개선 타임라인이 읽는다."""
+    p = _changelog_path()
+    if not p.exists():
+        return []
+    out: list[dict] = []
+    for line in p.open(encoding="utf-8"):
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue
+    return out
+
+
+def commit_with_log(batches: list[dict]) -> dict:
+    """[반영 저장] 의 진입점 — 저장하고, 반영 전후의 변화를 일지에 남긴다.
+
+    batches: [{filename, mode, items}, ...]  (파일 여러 개를 한 번에)
+    돌려주는 값의 change 가 "이번 반영으로 바뀐 것" 리포트가 된다:
+      · dataset 몇 건 → 몇 건 (유형별 추가 내역)
+      · 프롬프트 주입 예시에 새로 들어온 것 / 밀려난 것
+      · 사전 표현 개수 전후
+    """
+    before = stats()
+    inj_before = _injected(_examples_pool())
+
+    per_file: list[dict] = []
+    added = {"miss": 0, "fp": 0, "regrade": 0, "match": 0, "gold": 0}
+    for b in batches:
+        items = b.get("items") or []
+        if not items:
+            continue
+        save_dataset(b.get("filename") or "unknown.pptx",
+                     b.get("mode") or "archive", items)
+        c = {k: sum(1 for it in items if it.get("type") == k) for k in added}
+        for k in added:
+            added[k] += c[k]
+        per_file.append({"filename": b.get("filename") or "unknown.pptx",
+                         "mode": b.get("mode") or "archive",
+                         "items": len(items), **c})
+    if not per_file:
+        raise ValueError("저장할 항목이 없습니다.")
+
+    after = stats()
+    inj_after = _injected(_examples_pool())
+
+    def _k(e: dict) -> tuple:
+        return (e["kind"], e["quote"])
+
+    bkeys = {_k(e) for e in inj_before}
+    akeys = {_k(e) for e in inj_after}
+    entry = {
+        "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+        "kind": "review_commit",
+        "files": per_file,
+        "added": {**added, "total": sum(added.values())},
+        "dataset": {"before": before["dataset"], "after": after["dataset"]},
+        "examples": {
+            "before": before["examples"], "after": after["examples"],
+            "entered": [e for e in inj_after if _k(e) not in bkeys],
+            "left": [e for e in inj_before if _k(e) not in akeys],
+        },
+        "rules": {"before": before["rules"], "after": after["rules"]},
+    }
+    _append_log(entry)
+    return {"change": entry, "stats": after,
+            "saved_files": len(per_file),
+            "saved_items": sum(f["items"] for f in per_file)}
+
+
 _EX_CACHE: tuple[float, str] = (-1.0, "")
 
 
@@ -468,6 +570,9 @@ def add_rule(keyword: str) -> dict:
     _rules_path().write_text(json.dumps(rules, ensure_ascii=False, indent=1),
                              encoding="utf-8")
     lexicon.load_user_rules()          # 다음 분석부터 바로 적용
+    _append_log({"ts": datetime.datetime.now().isoformat(timespec="seconds"),
+                 "kind": "rule_add", "keyword": keyword,
+                 "rules_after": len(rules)})
     return stats()
 
 
