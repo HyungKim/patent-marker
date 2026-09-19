@@ -119,7 +119,7 @@ located = sum(1 for f in resolved if f.span is not None)
 print(f"\n총 후보 {len(resolved)}건 · 인용구 위치 확정 {located}건 "
       f"({located / max(len(resolved), 1) * 100:.0f}%) · 하이라이트 {len(marks)}구간")
 
-stats = mark.apply(deck, resolved, marks, add_summary=True, tag_marks=True)
+stats = mark.apply(deck, resolved, marks, add_summary=True)   # 기본값: 범례+배지, 문구 없음
 deck.prs.save(dst)
 print(f"저장: {dst}  {stats}\n")
 

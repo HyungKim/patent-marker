@@ -53,7 +53,7 @@ for seg in deck.segments:
 resolved, marks = merge.resolve(deck, fake, hits_by_seg)
 print(f"후보 {len(resolved)}건 · 하이라이트 구간 {len(marks)}개")
 
-stats = mark.apply(deck, resolved, marks, add_summary=True, tag_marks=True)
+stats = mark.apply(deck, resolved, marks, add_summary=True)   # 기본값: 범례+배지, 문구 없음
 deck.prs.save(dst)
 print(f"저장: {dst}  {stats}")
 

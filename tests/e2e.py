@@ -53,7 +53,7 @@ llm = sum(1 for f in resolved if f.source == "llm")
 print(f"\n후보 {len(resolved)}건 (모델 {llm} · 규칙 안전망 {len(resolved) - llm}) · "
       f"인용구 위치 확정 {located}/{len(resolved)} · 하이라이트 {len(marks)}구간")
 
-stats = mark.apply(deck, resolved, marks, add_summary=True, tag_marks=True)
+stats = mark.apply(deck, resolved, marks, add_summary=True)   # 기본값: 범례+배지, 문구 없음
 deck.prs.save(dst)
 print(f"저장: {dst}  {stats}  총 {time.time() - t0:.1f}s\n")
 

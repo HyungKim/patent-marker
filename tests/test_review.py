@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 TMP = tempfile.mkdtemp(prefix="pm-review-test-")
 os.environ["PM_REVIEW_DIR"] = TMP
 
+from lxml import etree                              # noqa: E402
 from pptx import Presentation                      # noqa: E402
 from pptx.util import Inches                       # noqa: E402
 
@@ -64,13 +65,45 @@ model_findings = [
 hits = {s.seg_id: lexicon.scan(s.text) for s in deck.segments}
 resolved, marks = merge.resolve(deck, model_findings, hits)
 fp = review.save_archive(deck, resolved)
-mark.apply(deck, resolved, marks, add_summary=True, tag_marks=True)
+# 문구 옵션을 켜서 마킹 — 6절의 '고아 문구로 오탐 추정' 경로까지 검사하기 위해
+st_mark = mark.apply(deck, resolved, marks, add_summary=True, tag_marks=True)
 marked = WORK / "marked.pptx"
 deck.prs.save(str(marked))
 check("분석 기록 저장", review.load_archive(fp) is not None)
+check("첫 슬라이드에 색상 범례 상자", st_mark["legend"] == 1 and any(
+    s.name == config.LEGEND_NAME for s in Presentation(str(marked)).slides[0].shapes))
+check("배지 문구 = 출원검토필요", any(
+    s.name == config.BADGE_NAME and s.text_frame.text.startswith("출원검토필요")
+    for s in Presentation(str(marked)).slides[0].shapes))
+
+# 기본 옵션(문구 없음)으로도 한 번: 범례의 색 견본이 검토본 형광펜으로 오인되지 않아야 한다
+deck_b = extract.extract(str(src))
+res_b, marks_b = merge.resolve(deck_b, [
+    Finding(next(s.seg_id for s in deck_b.segments if s.text == P1), 1, "자체 개발", "B",
+            "독자성주장", True, False, "독자 개발 주장"),
+    Finding(next(s.seg_id for s in deck_b.segments if s.text == P2), 1, "결재 소요 시간 단축", "B",
+            "효과만기재", True, False, "효과만 기재"),
+], hits)
+st_b = mark.apply(deck_b, res_b, marks_b, add_summary=True)
+marked_b = WORK / "marked_default.pptx"
+deck_b.prs.save(str(marked_b))
+rv_b = review.read_reviewed(str(marked_b))
+check("기본 옵션: 문구 없음", st_b["tags"] == 0 and not any(
+    p["tags"] for p in rv_b["paras"]))
+check("기본 옵션: 범례 견본은 형광펜으로 세지 않음 (본문 2구간만)",
+      sum(len(p["spans"]) for p in rv_b["paras"]) == 2,
+      str([p["spans"] for p in rv_b["paras"]]))
+check("기본 옵션: 지문 일치", rv_b["fingerprint"] == fp)
+
+# 예전 버전이 붙인 【특허검토필요】 문구도 도구 문구로 알아본다
+_old = etree.fromstring(
+    '<a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+    '<a:r><a:t>자체 개발 구간</a:t></a:r><a:r><a:t> 【특허검토필요】</a:t></a:r></a:p>')
+_txt, _sp, _tg = review._para_review(_old)
+check("예전 문구 호환 (글자에서 제외·위치 기록)", _txt == "자체 개발 구간" and _tg == [8],
+      f"{_txt!r} {_tg}")
 
 # ── 3. "사람의 검토" 흉내: P2 형광펜 제거(오탐), P1 에 새 형광펜(누락) ──
-from lxml import etree                              # noqa: E402
 from pptx.oxml.ns import qn                         # noqa: E402
 from app.extract import _para_text                  # noqa: E402
 
