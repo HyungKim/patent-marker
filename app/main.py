@@ -36,7 +36,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import Body, FastAPI, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -286,40 +286,58 @@ def job_delete(job_id: str) -> JSONResponse:
 # [검토 반영] 탭 ─ 검토완료본 업로드 → 교정 내역 → 사전·예시 보강
 # ═════════════════════════════════════════════════════════════════
 @app.post("/api/review/preview")
-async def review_preview(file: UploadFile) -> JSONResponse:
-    """검토완료 PPTX 를 받아 교정 내역(누락·오탐·등급변경)을 계산해 돌려준다.
+async def review_preview(files: list[UploadFile] = File(default=[]),
+                         file: UploadFile | None = File(default=None)) -> JSONResponse:
+    """검토완료 PPTX(여러 개 가능)를 받아 파일별 교정 내역을 계산해 돌려준다.
 
     아직 아무것도 저장하지 않는다 — 화면에서 [반영 저장] 을 눌러야 기록된다.
+    한 파일이 깨져 있거나 같은 문서가 겹쳐도 나머지 파일은 정상 처리된다.
+    (file 은 예전 단일 업로드 형식과의 호환용)
     """
-    name = file.filename or "reviewed.pptx"
-    if not name.lower().endswith(".pptx"):
-        raise HTTPException(400, "PPTX 파일만 지원합니다.")
+    ups = list(files) + ([file] if file is not None else [])
+    if not ups:
+        raise HTTPException(400, "PPTX 파일을 올려 주세요.")
     workdir = Path(tempfile.mkdtemp(prefix="pm-review-"))
-    tmp = workdir / "reviewed.pptx"
     try:
-        with tmp.open("wb") as fh:
-            shutil.copyfileobj(file.file, fh)
-        reviewed = review.read_reviewed(str(tmp))
-        result = review.diff(reviewed)
+        named: list[tuple[str, str]] = []
+        for n, up in enumerate(ups):
+            tmp = workdir / f"r{n}.pptx"
+            with tmp.open("wb") as fh:
+                shutil.copyfileobj(up.file, fh)
+            named.append((up.filename or f"reviewed{n}.pptx", str(tmp)))
+        results = review.preview_many(named)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         raise HTTPException(400, f"검토본을 읽지 못했습니다: {type(e).__name__}: {e}")
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
-    result["filename"] = name
-    result["stats"] = review.stats()
-    return JSONResponse(result)
+    return JSONResponse({"files": results, "stats": review.stats()})
 
 
 @app.post("/api/review/commit")
 async def review_commit(payload: dict = Body(...)) -> JSONResponse:
-    """미리보기에서 확인한 교정 내역을 데이터셋에 저장하고 프롬프트 예시를 갱신한다."""
-    items = payload.get("items") or []
-    if not items:
+    """미리보기에서 확인한 교정 내역을 데이터셋에 저장하고 프롬프트 예시를 갱신한다.
+
+    여러 파일을 한 번에 받는다: {"files": [{filename, mode, items}, ...]}.
+    예전 단일 형식 {filename, mode, items} 도 그대로 동작한다.
+    """
+    batches = payload.get("files")
+    if batches is None:                # 예전 단일 파일 형식
+        batches = [payload]
+    saved_files = saved_items = 0
+    st = review.stats()
+    for b in batches:
+        items = b.get("items") or []
+        if not items:
+            continue
+        st = review.save_dataset(b.get("filename") or "unknown.pptx",
+                                 b.get("mode") or "archive", items)
+        saved_files += 1
+        saved_items += len(items)
+    if not saved_items:
         raise HTTPException(400, "저장할 항목이 없습니다.")
-    st = review.save_dataset(payload.get("filename") or "unknown.pptx",
-                             payload.get("mode") or "archive", items)
-    return JSONResponse({"ok": True, "stats": st})
+    return JSONResponse({"ok": True, "saved_files": saved_files,
+                         "saved_items": saved_items, "stats": st})
 
 
 @app.post("/api/review/rule")

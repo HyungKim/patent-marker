@@ -350,6 +350,36 @@ def diff(reviewed: dict) -> dict:
             "counts": n, "agree": agree, "items": items}
 
 
+def preview_many(named_paths: list[tuple[str, str]]) -> list[dict]:
+    """검토완료본 여러 개를 한 번에 읽어 파일별 교정 내역을 만든다.
+
+    - 파일 하나가 깨져 있어도 전체를 실패시키지 않는다: 그 파일에만 error 를 채운다.
+    - 같은 문서(지문 동일)의 검토본이 두 개 들어오면 첫 번째만 처리하고
+      두 번째는 duplicate_of 로 표시한다. 두 벌의 교정이 서로 다를 수 있는데
+      어느 쪽이 옳은지 기계가 고를 수 없으므로, 한 번에 한 벌만 반영한다.
+      (두 번째 벌을 반영하려면 따로 다시 올리면 된다 — 나중 기록이 우선된다)
+    """
+    out: list[dict] = []
+    seen: dict[str, str] = {}          # 지문 → 먼저 온 파일 이름
+    for name, path in named_paths:
+        if not name.lower().endswith(".pptx"):
+            out.append({"filename": name, "error": "PPTX 파일만 지원합니다."})
+            continue
+        try:
+            result = diff(read_reviewed(path))
+        except Exception as e:  # noqa: BLE001  (한 파일의 오류가 배치 전체를 막지 않도록)
+            out.append({"filename": name, "error": f"{type(e).__name__}: {e}"})
+            continue
+        first = seen.get(result["fingerprint"])
+        if first:
+            out.append({"filename": name, "duplicate_of": first})
+            continue
+        seen[result["fingerprint"]] = name
+        result["filename"] = name
+        out.append(result)
+    return out
+
+
 # ═════════════════════════════════════════════════════════════════
 # 5. 저장 ─ 데이터셋에 쌓고, 프롬프트 예시를 갱신
 # ═════════════════════════════════════════════════════════════════
