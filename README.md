@@ -5,6 +5,7 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
 
 > **Windows 로 옮겨서 설치하려면 → [docs/00_Windows_따라하기_가이드.md](docs/00_Windows_따라하기_가이드.md) (이 문서대로만 하면 됩니다)**
 > 처음이라면 → [docs/01_프로그램_구조.md](docs/01_프로그램_구조.md) (구조 설명) → [docs/02_설치_및_이전_안내.md](docs/02_설치_및_이전_안내.md) (설치·이전)
+> 검토 결과로 판정을 좋게 만들기 → [docs/03_검토반영_사용법.md](docs/03_검토반영_사용법.md)
 > 발표용 자료 `docs/특허마킹도구_구조설명.pptx` (15장)는 용량 때문에 이 GitHub 저장소에는 넣지 않았습니다 — USB 압축본과 원본 Mac 에만 있습니다.   ·   결과 모양 미리 보기 → [samples/회사보고자료_예시_마킹결과.pptx](samples/회사보고자료_예시_마킹결과.pptx)
 
 ---
@@ -46,10 +47,20 @@ bash run.sh
 
 ---
 
+## 검토 반영 (판정을 점점 좋게)
+
+마킹 결과를 사람이 PowerPoint 에서 교정(오탐 형광펜 지우기 · 누락 새로 칠하기)한 파일을
+웹 화면의 **[검토 반영]** 탭에 올리면, 교정 내역이 자동으로 쌓여 다음 분석부터 반영됩니다 —
+오탐·누락 사례는 판정 프롬프트에 예시로 주입되고, [사전에 추가] 한 표현은 규칙 사전이 반드시 잡습니다.
+자세한 방법: [docs/03_검토반영_사용법.md](docs/03_검토반영_사용법.md)
+
+---
+
 ## 폴더 구성
 
 ```
-app/        프로그램 본체 (config → extract → lexicon → analyze → merge → mark, main)
+app/        프로그램 본체 (config → extract → lexicon → analyze → merge → mark, review, main)
+review_data/  검토 반영으로 쌓이는 교정 데이터 (자동 생성, 저장소에는 미포함)
 docs/       구조 설명 · 설치/이전 안내 · 발표자료(pptx)
 tests/      점검 스크립트 (모델 없이 돌릴 수 있는 것 포함)
 samples/    연습용 보고서 · 실제 모델로 마킹한 결과 예시
@@ -76,6 +87,7 @@ setup.*     처음 한 번 설치     run.*   실행 (run_14b.bat = 고품질 �
 
 ```bash
 .venv/bin/python tests/test_filter.py     # 1초  · 오탐 필터
+.venv/bin/python tests/test_review.py     # 몇 초 · 검토 반영 경로
 .venv/bin/python tests/smoke.py           # 몇 초 · 모델 없이 읽기→마킹
 .venv/bin/python tests/mock_llm.py        # 몇 초 · 가짜 모델로 연동 경로
 .venv/bin/python tests/e2e.py             # 수 분 · 진짜 모델
