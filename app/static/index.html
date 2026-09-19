@@ -456,6 +456,20 @@ function render(st){
 const esc = s => (s||"").replace(/[&<>"]/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
+// 화면용 HTML 조각을 '붙여넣을 글자' 로 되돌린다 ([보고용 표 복사] 전용).
+//  1) 이름표 <span>반영</span> → [반영]   2) 나머지 태그 제거
+//  3) esc() 가 만든 &amp; 같은 엔티티를 원래 글자로 (안 되돌리면 R&D 가 R&amp;D 로 붙는다)
+//  4) 표 안에서 | 는 칸 구분자라 문구에 들어 있으면 칸이 어긋난다 → \| 로 막는다
+// 화면 표시에는 쓰지 않는다(esc 를 그대로 둬야 태그가 실행되지 않는다).
+function htmlToText(html, forTable){
+  const t = (html || "")
+    .replace(/<span[^>]*>/g, "[").replace(/<\/span>/g, "]")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+  return forTable ? t.replace(/\|/g, "\\|") : t;
+}
+
 // ═════════════ 검토 반영 탭 ═════════════
 let rdata = null;    // /api/review/preview 의 응답 {files:[...], stats}
 let rvalid = [];     // 그중 실제로 반영할 파일들 (오류·중복·빈 파일 제외)
@@ -480,7 +494,7 @@ async function rstats(){
   try{
     const s = await (await fetch("/api/review/stats")).json();
     $("#rstats").innerHTML =
-      `누적 현황 — 교정 데이터 <b>${s.dataset}</b>건 · 프롬프트 주입 예시 <b>${s.examples}</b>개 · ` +
+      `누적 현황 — 교정 데이터 <b>${s.dataset}</b>건 · 쌓인 예시 <b>${s.examples}</b>개(이 중 프롬프트 주입 <b>${s.injected ?? 0}</b>개) · ` +
       `추가된 사전 표현 <b>${s.rules}</b>개 · 보관된 분석 기록 <b>${s.archives}</b>건`;
   }catch(e){ $("#rstats").textContent = ""; }
 }
@@ -617,7 +631,7 @@ function renderChange(ch){
     <p class="note" style="margin:8px 0 0">
     ① 교정 기록(dataset.jsonl): ${ch.dataset.before}건 → <b>${ch.dataset.after}건</b>
        (+${a.total}${parts.length ? ": " + parts.join(" · ") : ""})<br>
-    ② 판정 프롬프트 주입 예시(examples.json): ${ch.examples.before}개 → <b>${ch.examples.after}개</b>
+    ② 쌓인 예시(examples.json): ${ch.examples.before}개 → <b>${ch.examples.after}개</b> · 이 중 잘 고른 몇 개만 프롬프트로
     ${entered ? `<br>&nbsp;&nbsp;· 새로 주입됨:<br>&nbsp;&nbsp;&nbsp;&nbsp;${entered}` : " — 주입 목록 변화 없음"}
     ${left ? `<br>&nbsp;&nbsp;· 주입에서 밀려남(기록·평가셋에는 보존): ${left}` : ""}<br>
     ③ 사전 표현(extra_rules.json): ${ch.rules.before}개 → <b>${ch.rules.after}개</b><br>
@@ -667,7 +681,8 @@ function changesText(e){
   const parts = [];
   if(c.rules_added?.length) parts.push(`사전 +${c.rules_added.length} (${c.rules_added.slice(0,3).map(esc).join(", ")}${c.rules_added.length>3?" 외":""})`);
   if(c.rules_removed?.length) parts.push(`사전 −${c.rules_removed.length}`);
-  if(c.examples_delta) parts.push(`주입 예시 ${c.examples_delta>0?"+":""}${c.examples_delta}`);
+  if(c.injected_change) parts.push(`<b>주입 칸 ${esc(c.injected_change)} (프롬프트 변경 — 회차 비교 주의)</b>`);
+  if(c.examples_delta) parts.push(`쌓인 예시 ${c.examples_delta>0?"+":""}${c.examples_delta}`);
   if(c.dataset_delta) parts.push(`교정 데이터 ${c.dataset_delta>0?"+":""}${c.dataset_delta}건`);
   if(c.model_change) parts.push(`모델 ${esc(c.model_change)}`);
   return parts.length ? parts.join(" · ") : "설정 변경 없음";
@@ -841,20 +856,15 @@ $("#ecopy").onclick = async () => {
     "| 회차 | 날짜 | 문제지(정답) | 변경 내역 | 재현율(최초→현재) | 정밀도(최초→현재) | F1(최초→현재) | ΔF1 |",
     "|---|---|---|---|---|---|---|---|",
     ...eEntries.map(e => `| ${e.run_no} | ${(e.ts||"").slice(0,10)} | ${e.eval_set.golds}구간 | ` +
-      `${changesText(e).replace(/<[^>]*>/g,"")} | ${fmt(e.baseline.recall)} → ${fmt(e.current.recall)} | ` +
+      `${htmlToText(changesText(e), true)} | ${fmt(e.baseline.recall)} → ${fmt(e.current.recall)} | ` +
       `${fmt(e.baseline.precision)} → ${fmt(e.current.precision)} | ` +
       `${fmt(e.baseline.f1)} → ${fmt(e.current.f1)} | ${e.delta.f1 == null ? "–" : (e.delta.f1>0?"+":"")+e.delta.f1+"%p"} |`),
     "",
     "※ 같은 회차 안에서 최초 설정과 현재 설정을 동일 문제지(사내 검토로 확정된 정답)로 채점한 결과.",
     "",
     "## 개선 타임라인 (무엇을 바꿨고 → 얼마나 좋아졌나)",
-    ...timelineItems().map(it => {
-      // 화면용 HTML 을 텍스트로: 이름표 <span>반영</span> → [반영]
-      const text = it.html
-        .replace(/<span[^>]*>/g, "[").replace(/<\/span>/g, "]")
-        .replace(/<[^>]*>/g, "");
-      return `- ${(it.ts||"").slice(0,16).replace("T"," ")}  ${text}`;
-    }),
+    ...timelineItems().map(it =>
+      `- ${(it.ts||"").slice(0,16).replace("T"," ")}  ${htmlToText(it.html, false)}`),
   ].join("\n");
   try{
     await navigator.clipboard.writeText(rows);
