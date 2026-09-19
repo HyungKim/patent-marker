@@ -16,8 +16,8 @@ config.py ─ 프로그램 전체에서 공통으로 쓰는 "설정값" 모음
   "PM_MODEL 이라는 환경 변수가 있으면 그 값을, 없으면 'qwen3:8b' 를 쓴다" 는 뜻입니다.
   코드를 고치지 않고 실행 시점에 값을 바꾸는 용도입니다. (보통은 건드릴 일이 없습니다.)
 
-      macOS / Linux :  PM_MODEL=qwen3:14b bash run.sh
-      Windows       :  set PM_MODEL=qwen3:14b   (엔터 후)   run.bat
+      macOS / Linux :  PM_MODEL=모델명 bash run.sh
+      Windows       :  set PM_MODEL=모델명   (엔터 후)   run.bat
 """
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ from dataclasses import dataclass, field
 OLLAMA_HOST = os.environ.get("PM_OLLAMA_HOST", "http://127.0.0.1:11434")
 
 # 사용할 모델 이름. 터미널에서 `ollama list` 를 치면 내려받은 모델 목록이 보입니다.
-#   qwen3:8b  → 기본. 가볍고 빠름(약 5GB). GPU 없는 PC·메모리 16GB 에서도 실용적
-#   qwen3:14b → 고품질. 메모리 약 10GB 필요 (NVIDIA GPU 또는 24GB RAM 권장, run_14b.bat)
+#   qwen3:8b → 기본. 가볍고 빠름(약 5GB). GPU 없는 PC·메모리 16GB 에서도 실용적
+#   나중에 PC 사양이 좋아져 더 큰 모델로 바꿀 때: ollama pull 모델명 후 아래 값을 바꾸면 끝
 MODEL = os.environ.get("PM_MODEL", "qwen3:8b")
 
 # Qwen3 의 '생각하기(thinking)' 모드. 켜면 정확도가 조금 오르지만 3~5배 느려집니다.

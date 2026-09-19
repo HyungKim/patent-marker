@@ -193,7 +193,7 @@ def health() -> dict:
 
 
 def model_available(model: str, models: list[str]) -> bool:
-    """원하는 모델이 내려받아져 있는가. 'qwen3' 만 적어도 'qwen3:14b' 와 맞춰 준다."""
+    """원하는 모델이 내려받아져 있는가. 'qwen3' 만 적어도 'qwen3:8b' 와 맞춰 준다."""
     base = model.split(":")[0]
     return any(n == model or n.startswith(base + ":") for n in models)
 
