@@ -28,7 +28,8 @@ review.py ─ 검토완료본을 읽어 "사람의 교정" 을 학습 재료로 
 [짝 맞추기의 원리]
   검토본은 마킹본을 고친 것이라 글자 내용은 원본과 같습니다. 그래서 문단 글자를
   이어붙여 만든 지문(fingerprint)으로 "어느 분석 기록과 비교할지" 를 찾습니다.
-  【특허검토필요】 문구와 배지·요약 슬라이드는 도구가 넣은 것이므로 빼고 비교합니다.
+  범례 상자·배지·요약 슬라이드와 (옵션으로 붙인) 【출원검토필요】 문구는 도구가 넣은
+  것이므로 빼고 비교합니다. 예전 버전의 【특허검토필요】 문구도 같은 방식으로 뺍니다.
 """
 from __future__ import annotations
 
@@ -46,11 +47,16 @@ from pptx.oxml.ns import qn
 from . import config, lexicon
 from .extract import _walk_shapes
 
-# 요약 슬라이드를 알아보는 표식 (mark.append_summary 가 붙이는 제목)
-SUMMARY_TITLE = "특허 검토 마킹 요약"
-# 배지 도형 이름 (mark.add_slide_badges 가 붙임)
-BADGE_NAME = "특허검토필요 배지"
-BADGE_RE = re.compile(rf"^{config.BADGE_TEXT}\s*\d+\s*건$")
+# 도구가 넣은 것들을 알아보는 표식. 예전 버전이 만든 마킹본도 읽을 수 있게 옛 표현을 함께 둔다.
+SUMMARY_TITLES = ("출원 검토 마킹 요약", "특허 검토 마킹 요약")     # mark.append_summary 제목
+TOOL_SHAPE_NAMES = frozenset(
+    (config.BADGE_NAME, config.LEGEND_NAME, *config.LEGACY_BADGE_NAMES)
+)                                                                     # 배지·범례 도형 이름
+TAG_TEXTS = frozenset((config.TAG_TEXT, *config.LEGACY_TAG_TEXTS))    # 구간 뒤 문구
+BADGE_RE = re.compile(
+    "^(?:" + "|".join(re.escape(t) for t in (config.BADGE_TEXT, *config.LEGACY_BADGE_TEXTS))
+    + r")\s*\d+\s*건$"
+)
 
 # 색 계열 → 등급 판정용 기준 색상각(hue). GRADE_COLOR 에서 유도한 값.
 #   A=FFD54F(노랑, 46°) · B=9FD8F5(하늘, 203°) · R=FF9E80(살구, 14°)
@@ -160,8 +166,9 @@ def color_to_grade(hexv: str) -> tuple[str, bool]:
 def _para_review(p_el) -> tuple[str, list[dict], list[int]]:
     """문단 하나를 읽어 (도구 문구를 뺀 원문, 형광펜 구간 목록, 고아 태그 위치) 를 돌려준다.
 
-    - 【특허검토필요】 런은 도구가 넣은 것이므로 글자에서 제외한다.
-      (형광펜을 지웠는데 문구만 남아 있으면 그 자리가 '사람이 지운 흔적' 이 된다)
+    - 【출원검토필요】(예전 버전은 【특허검토필요】) 런은 도구가 넣은 것이므로 글자에서 제외한다.
+      (형광펜을 지웠는데 문구만 남아 있으면 그 자리가 '사람이 지운 흔적' 이 된다.
+       문구 옵션을 끄고 만든 마킹본에는 이 런이 아예 없다 — 그래도 동작에는 지장이 없다)
     - 같은 색이 이어지는 런들은 구간 하나로 합친다.
     """
     clean: list[str] = []
@@ -183,7 +190,7 @@ def _para_review(p_el) -> tuple[str, list[dict], list[int]]:
         if t is None:
             continue
         text = t.text or ""
-        if text.strip() == config.TAG_TEXT:      # 도구가 붙인 문구는 건너뜀
+        if text.strip() in TAG_TEXTS:            # 도구가 붙인 문구는 건너뜀
             _close()
             tags.append(pos)
             continue
@@ -218,7 +225,7 @@ def read_reviewed(path: str) -> dict:
         slide_paras: list[tuple] = []
         is_summary = False
         for shp, _pid in _walk_shapes(slide.shapes):
-            if getattr(shp, "name", "") == BADGE_NAME:
+            if getattr(shp, "name", "") in TOOL_SHAPE_NAMES:    # 배지·범례 상자
                 continue
             if getattr(shp, "has_chart", False) and shp.has_chart:
                 continue
@@ -234,7 +241,7 @@ def read_reviewed(path: str) -> dict:
                     text, spans, tags = _para_review(para._p)
                     if not text.strip():
                         continue
-                    if text.strip().startswith(SUMMARY_TITLE):
+                    if text.strip().startswith(SUMMARY_TITLES):
                         is_summary = True
                     if BADGE_RE.match(text.strip()):
                         continue
@@ -273,7 +280,8 @@ def diff(reviewed: dict) -> dict:
 
     분석 기록이 없으면(다른 PC 에서 분석했거나 지웠으면) '축소 모드' 로 동작:
       - 형광펜 구간 전부를 '확정 라벨' 로 수집하고
-      - 고아 【특허검토필요】 문구(형광펜만 지워진 자리)로 오탐을 추정한다.
+      - 고아 【출원검토필요】 문구(형광펜만 지워진 자리)로 오탐을 추정한다.
+        (문구 옵션을 끄고 만든 마킹본이면 이 단서가 없으므로 확정 라벨만 모인다)
     """
     arch = load_archive(reviewed["fingerprint"])
     mode = "archive" if arch else "fallback"

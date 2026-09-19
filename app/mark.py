@@ -6,9 +6,10 @@ mark.py ─ 분석 결과를 PPTX 파일에 실제로 "그려 넣는" 단계
   merge.py 가 확정한 "어디를 칠할지"(Mark 목록)를 받아 PPTX 에 네 가지를 남깁니다.
 
     1. 본문 형광펜      : 해당 어구만 등급 색으로 칠함 (+ 같은 색 밑줄)
-    2. 【특허검토필요】 : 형광펜 구간 바로 뒤에 작은 빨간 굵은 글씨로 붙임
-    3. 슬라이드 배지    : 마킹이 있는 슬라이드 오른쪽 위에 "특허검토필요 N건"
+    2. 첫 슬라이드 범례 : "출원검토필요 표시 안내" 상자 — 색상별 뜻을 한 번만 안내
+    3. 슬라이드 배지    : 마킹이 있는 슬라이드 오른쪽 위에 "출원검토필요 N건"
     4. 노트 주석 + 요약 슬라이드 : 근거와 전체 목록을 문서 안에 남김
+    (+ 선택) 【출원검토필요】 문구 : 흑백 인쇄용. 형광펜 구간 뒤에 붙임. 기본은 끔.
 
 [초보자를 위한 배경 지식 ─ PPTX 의 속사정]
   .pptx 파일은 사실 ZIP 압축 파일이고, 그 안에 슬라이드마다 XML 문서가 들어 있습니다.
@@ -240,10 +241,10 @@ def _split_run(r_el, at: int):
 
 
 # ═════════════════════════════════════════════════════════════════
-# 4. 【특허검토필요】 문구 런 만들기
+# 4. 【출원검토필요】 문구 런 만들기 (선택 옵션 — 흑백 인쇄용)
 # ═════════════════════════════════════════════════════════════════
 def _make_tag_run(template_el, text: str, color: str):
-    """형광펜 구간 뒤에 붙일 '【특허검토필요】' 런을 새로 만든다.
+    """형광펜 구간 뒤에 붙일 '【출원검토필요】' 런을 새로 만든다.
 
     - 글꼴(latin/ea/cs)은 앞 런(template_el)에서 물려받아 폰트가 튀지 않게 한다.
     - 크기는 앞 런의 75% (최소 8pt). 크기를 모르면 9pt.
@@ -309,14 +310,14 @@ def highlight(p_el, span: tuple[int, int] | None, color: str, dark_bg: bool,
 
     tags = 0
     if tag_text and els:
-        # 마지막으로 칠한 런 바로 뒤에 【특허검토필요】 를 끼워 넣는다
+        # 마지막으로 칠한 런 바로 뒤에 【출원검토필요】 를 끼워 넣는다
         els[-1].addnext(_make_tag_run(els[-1], " " + tag_text, tag_color))
         tags = 1
     return (len(els), tags)
 
 
 # ═════════════════════════════════════════════════════════════════
-# 6. 슬라이드 배지 ─ 오른쪽 위 "특허검토필요 N건"
+# 6. 슬라이드 배지 ─ 오른쪽 위 "출원검토필요 N건"
 # ═════════════════════════════════════════════════════════════════
 def add_slide_badges(deck: Deck, findings: list[Finding],
                      text: str, color: str) -> int:
@@ -336,7 +337,7 @@ def add_slide_badges(deck: Deck, findings: list[Finding],
             MSO_SHAPE.ROUNDED_RECTANGLE,
             prs.slide_width - w - Inches(0.2), Inches(0.12), w, h,
         )
-        shp.name = "특허검토필요 배지"
+        shp.name = config.BADGE_NAME
         shp.fill.solid()
         shp.fill.fore_color.rgb = RGBColor.from_string(color)
         shp.line.fill.background()        # 테두리 없음
@@ -357,16 +358,134 @@ def add_slide_badges(deck: Deck, findings: list[Finding],
 
 
 # ═════════════════════════════════════════════════════════════════
+# 6.5 첫 슬라이드 범례 ─ "출원검토필요 표시 안내" 상자
+# ═════════════════════════════════════════════════════════════════
+# 형광펜 색이 무슨 뜻인지를 문서 안에서 한 번만 안내한다. 구간마다 문구를 붙이지
+# 않아도 읽는 사람이 첫 장에서 규약을 알 수 있게 하는 장치.
+#   (등급 문자, 형광펜 색, 설명)
+LEGEND_ROWS = [
+    ("A", config.GRADE_COLOR["A"], "즉시 출원 검토 — 구체적 기술 수단이 드러남"),
+    ("B", config.GRADE_COLOR["B"], "발명 발굴 필요 — 수단은 없으나 존재가 시사됨"),
+    ("⚠", config.GRADE_COLOR["R"], "공개 리스크 — 전시·논문 등 이미 공개된 내용"),
+]
+LEGEND_FOOT = ["형광펜(밑줄) 구간 = 출원 검토 필요",
+               "근거: 발표자 노트  ·  전체 목록: 마지막 슬라이드"]
+LEGEND_W, LEGEND_H = Inches(4.15), Inches(1.38)
+_EMU_IN = 914400
+
+
+def _shape_weight(shp) -> float:
+    """겹쳤을 때 얼마나 나쁜가. 채워진 도형·그림·표는 눈에 보이는 면적 전체가 내용이지만,
+    채우기 없는 글상자는 글자보다 훨씬 큰 빈 상자인 경우가 많아 가볍게 본다."""
+    if getattr(shp, "has_table", False) or getattr(shp, "has_chart", False):
+        return 3.0
+    if shp.shape_type == 13:                       # 13 = PICTURE
+        return 3.0
+    try:
+        return 3.0 if shp.fill.type is not None else 1.0
+    except Exception:  # noqa: BLE001  (채우기 정보를 못 읽는 도형)
+        return 2.0
+
+
+def _legend_position(slide, sw: int, sh: int) -> tuple[int, int]:
+    """범례 상자를 놓을 자리를 고른다.
+
+    슬라이드를 0.25인치 간격으로 훑으며 "기존 도형과 겹치는 면적(가중치 적용)" 이
+    가장 작은 자리를 고르고, 같은 값이면 오른쪽 아래 모서리에 가까운 쪽을 택한다.
+    슬라이드 절반 이상을 덮는 도형(배경판)은 무시한다.
+    """
+    m = step = Inches(0.25)
+    boxes = []
+    for shp in slide.shapes:
+        if None in (shp.left, shp.top, shp.width, shp.height):
+            continue
+        if shp.width * shp.height >= 0.5 * sw * sh:
+            continue
+        boxes.append((shp.left, shp.top, shp.left + shp.width, shp.top + shp.height,
+                      _shape_weight(shp)))
+    x_max, y_max = sw - LEGEND_W - m, sh - LEGEND_H - m
+    best, best_score = (max(x_max, 0), max(y_max, 0)), None
+    y = m
+    while y <= y_max:
+        x = m
+        while x <= x_max:
+            overlap = 0.0
+            for bx1, by1, bx2, by2, w in boxes:
+                ix = min(x + LEGEND_W, bx2) - max(x, bx1)
+                iy = min(y + LEGEND_H, by2) - max(y, by1)
+                if ix > 0 and iy > 0:
+                    overlap += w * (ix / _EMU_IN) * (iy / _EMU_IN)
+            corner = ((x_max - x) + (y_max - y)) / _EMU_IN       # 오른쪽 아래와의 거리(인치)
+            score = overlap + 0.05 * corner
+            if best_score is None or score < best_score - 1e-9:
+                best, best_score = (x, y), score
+            x += step
+        y += step
+    return best
+
+
+def add_legend(deck: Deck, title: str, color: str) -> int:
+    """첫 슬라이드에 색상 범례 상자를 붙인다. 반환: 붙인 개수(0 또는 1)."""
+    prs = deck.prs
+    if not len(prs.slides):
+        return 0
+    slide = prs.slides[0]
+    x, y = _legend_position(slide, prs.slide_width, prs.slide_height)
+    shp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, LEGEND_W, LEGEND_H)
+    shp.name = config.LEGEND_NAME
+    shp.fill.solid()
+    shp.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    shp.line.color.rgb = RGBColor.from_string(color)
+    shp.line.width = Pt(1)
+    shp.shadow.inherit = False
+    tf = shp.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = Inches(0.12)
+    tf.margin_top = tf.margin_bottom = Inches(0.06)
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    dark = RGBColor.from_string(config.MARKED_TEXT_COLOR)
+
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.LEFT
+    r = p.add_run()
+    r.text = title
+    r.font.size, r.font.bold = Pt(10), True
+    r.font.color.rgb = RGBColor.from_string(color)
+
+    for grade, hexcolor, desc in LEGEND_ROWS:
+        p = tf.add_paragraph()
+        p.alignment = PP_ALIGN.LEFT
+        sw_run = p.add_run()                       # 색 견본: 실제 형광펜을 그대로 씀
+        sw_run.text = f" {grade} "
+        sw_run.font.size, sw_run.font.bold = Pt(9), True
+        sw_run.font.color.rgb = dark
+        _paint(sw_run._r, hexcolor, False)
+        tx = p.add_run()
+        tx.text = f"  {desc}"
+        tx.font.size = Pt(9)
+        tx.font.color.rgb = dark
+
+    for line in LEGEND_FOOT:
+        p = tf.add_paragraph()
+        p.alignment = PP_ALIGN.LEFT
+        r = p.add_run()
+        r.text = line
+        r.font.size = Pt(8)
+        r.font.color.rgb = RGBColor(0x5F, 0x6B, 0x7A)
+    return 1
+
+
+# ═════════════════════════════════════════════════════════════════
 # 7. 발표자 노트 주석
 # ═════════════════════════════════════════════════════════════════
-BANNER = "━━━━━━ 특허 검토 마킹 (자동 생성) ━━━━━━"
+BANNER = "━━━━━━ 출원 검토 마킹 (자동 생성) ━━━━━━"
 
 LEGEND_LINES = [
     "【 범례 】",
     f"  ■ A ({config.GRADE_COLOR['A']}) 즉시 출원 검토 — 구체적 기술 수단이 문면에 드러남",
     f"  ■ B ({config.GRADE_COLOR['B']}) 발명 발굴 필요 — 수단은 미기재이나 존재가 시사됨",
     f"  ■ ⚠ ({config.GRADE_COLOR['R']}) 공개 리스크 — 신규성 상실 우려, 기한 확인 필요",
-    f"  {config.TAG_TEXT} 문구가 붙은 곳이 마킹 구간입니다.",
+    "  형광펜(밑줄) 구간이 출원 검토가 필요한 곳입니다. 색 안내는 첫 슬라이드의 범례 상자에 있습니다.",
     "",
     "본 마킹은 변리사 검토 전 1차 스크리닝 결과입니다.",
     "선행기술 조사와 신규성·진보성 판단은 포함되어 있지 않습니다.",
@@ -416,6 +535,9 @@ def annotate_notes(deck: Deck, findings: list[Finding]) -> None:
 # ═════════════════════════════════════════════════════════════════
 # 8. 요약 슬라이드 (문서 끝에 추가)
 # ═════════════════════════════════════════════════════════════════
+SUMMARY_TITLE = "출원 검토 마킹 요약"      # review.py 가 이 제목으로 요약 슬라이드를 알아본다
+
+
 def _blank_layout(prs):
     """자리표시자(placeholder)가 가장 적은 레이아웃 = 빈 화면에 가장 가까운 것."""
     return min(prs.slide_layouts, key=lambda l: len(l.placeholders))
@@ -451,7 +573,7 @@ def append_summary(deck: Deck, findings: list[Finding], rows_per_slide: int = 13
         title = slide.shapes.add_textbox(Inches(0.6), Inches(0.45),
                                          Inches(sw - 1.2), Inches(0.5))
         tp = title.text_frame.paragraphs[0]
-        tp.text = "특허 검토 마킹 요약" + (f" ({pno}/{len(pages)})" if len(pages) > 1 else "")
+        tp.text = SUMMARY_TITLE + (f" ({pno}/{len(pages)})" if len(pages) > 1 else "")
         tp.runs[0].font.size = Pt(24)
         tp.runs[0].font.bold = True
 
@@ -491,12 +613,12 @@ def append_summary(deck: Deck, findings: list[Finding], rows_per_slide: int = 13
 # 9. 진입점 ─ main.py 가 호출하는 함수
 # ═════════════════════════════════════════════════════════════════
 def apply(deck: Deck, findings: list[Finding], marks: list[Mark],
-          add_summary: bool = True, tag_marks: bool = True) -> dict:
+          add_summary: bool = True, tag_marks: bool = False) -> dict:
     """모든 마킹을 한 번에 적용한다. 파일 저장은 호출한 쪽(main.py)이 한다."""
     seg_map = {s.seg_id: s for s in deck.segments}
 
     # 같은 문단 안에서는 "오른쪽 구간부터" 처리한다.
-    # 【특허검토필요】 문구를 끼워 넣으면 그 뒤쪽 글자 위치가 밀리는데,
+    # 【출원검토필요】 문구를 끼워 넣으면 그 뒤쪽 글자 위치가 밀리는데,
     # 오른쪽부터 처리하면 아직 처리하지 않은 왼쪽 구간의 좌표는 그대로 유지된다.
     ordered = sorted(marks, key=lambda m: (m.seg_id, -(m.span[0] if m.span else 0)))
 
@@ -515,10 +637,14 @@ def apply(deck: Deck, findings: list[Finding], marks: list[Mark],
         tags += n_tag
 
     badges = 0
-    if tag_marks and config.SLIDE_BADGE:
+    if findings and config.SLIDE_BADGE:
         badges = add_slide_badges(deck, findings, config.BADGE_TEXT, config.TAG_COLOR)
+    legend = 0
+    if findings and config.SLIDE_LEGEND:
+        legend = add_legend(deck, config.LEGEND_TITLE, config.TAG_COLOR)
 
     annotate_notes(deck, findings)
     if add_summary:
         append_summary(deck, findings)
-    return {"runs_painted": painted, "marks": len(marks), "tags": tags, "badges": badges}
+    return {"runs_painted": painted, "marks": len(marks), "tags": tags,
+            "badges": badges, "legend": legend}

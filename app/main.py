@@ -206,7 +206,7 @@ async def create_job(
     include_grade_c: bool = Form(False),
     scan_all: bool = Form(True),
     add_summary: bool = Form(True),
-    tag_marks: bool = Form(True),
+    tag_marks: bool = Form(False),
 ) -> JSONResponse:
     """파일 업로드를 받아 임시 폴더에 저장하고, 분석 스레드를 시작한다."""
     name = file.filename or "deck.pptx"
