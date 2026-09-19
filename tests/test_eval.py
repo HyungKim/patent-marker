@@ -123,9 +123,19 @@ assert entry2["run_no"] == 2
 assert ch["rules_added"] == ["체육 행사"], ch
 assert ch["model_change"] is None and ch["rules_removed"] == [], ch
 assert entry2["current"]["user_rules"] == 1
+assert ch["injected_change"] is None, ch          # 주입 칸이 그대로면 표시 없음
 hist = evaluate.history()
 assert [e["run_no"] for e in hist] == [1, 2]
 print("4. 이력 누적 OK — 2회차 changes 에 '사전 +1 (체육 행사)' 기록됨")
+
+# ── 3.5 주입 칸 수 변화 표시 ──────────────────────────────────────
+# 회차 사이에 프롬프트 칸 수가 바뀌면 점수 변화의 원인이 '교정이 좋아져서' 가
+# 아닐 수 있다. 특히 이 값을 기록하지 않던 예전 회차(도구 업그레이드 직전)는
+# 프롬프트가 가장 크게 바뀐 회차인데 '변경 없음' 으로 보이면 안 된다.
+assert evaluate._injected_change(8, 12) == "8 → 12"
+assert evaluate._injected_change(12, 12) is None
+assert evaluate._injected_change(None, 12) == "기록 없음 → 12"
+print("5. 주입 칸 변화 표시 OK — 기록이 없던 회차도 '기록 없음 → N' 으로 드러남")
 
 # 사용자 규칙을 되돌린다 (전역 RULES 를 다른 테스트가 이어받아도 안전하도록)
 (_TMP / "extra_rules.json").unlink()

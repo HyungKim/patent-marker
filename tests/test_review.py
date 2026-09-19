@@ -220,5 +220,159 @@ try:
 except ValueError:
     check("변경 일지: 빈 반영 거부", True)
 
+# ── 9. 예시 선별 ─ 보관은 무제한, 주입은 잘 고른 8건 ─────────────
+check("교정 항목에 카테고리가 붙는다 (사전에서 유추)",
+      next(i for i in d["items"] if i["type"] == "miss").get("category") is None
+      or isinstance(next(i for i in d["items"] if i["type"] == "miss").get("category"), str))
+fp_item = next(i for i in d["items"] if i["type"] == "fp")
+check("오탐 항목은 판정 기록의 카테고리를 그대로 쓴다",
+      fp_item.get("category") == "효과만기재", str(fp_item.get("category")))
+
+CATS = config.CATEGORIES
+before_pool = len(review._examples_pool())
+
+# 오탐이 몰린 보고서 한 건 — 이것만으로 반례 4칸을 독점하면 안 된다
+review.commit_with_log([{"filename": "경영실적.pptx", "mode": "archive", "items": [
+    {"type": "fp", "quote": f"매출 지표 {i}", "grade": "B", "risk": False,
+     "category": "효과만기재" if i % 2 else "비교우위", "snippet": "…"} for i in range(6)]}])
+# 이어서 기술 보고서 — 카테고리가 다양하다
+review.commit_with_log([{"filename": "기술개발.pptx", "mode": "archive", "items": [
+    {"type": "fp", "quote": f"공정 오탐 {i}", "grade": "B", "risk": False,
+     "category": CATS[i], "snippet": "…"} for i in range(4)] + [
+    {"type": "miss", "quote": f"기술 수단 {i}", "grade": "A", "risk": False,
+     "category": CATS[i], "snippet": "…"} for i in range(4)]}])
+
+pool = review._examples_pool()
+check("보관 상한 없음 — 넣은 만큼 그대로 쌓인다",
+      len(pool) == before_pool + 14, f"{before_pool} → {len(pool)}")
+
+excl = review._pick(pool, "exclude")
+incl = review._pick(pool, "include")
+n_inc_cand = len([e for e in pool if e.get("kind") == "include"])
+check("주입 칸은 종류별 상수를 따른다 (반례 4 · 정답 8)",
+      len(excl) == review.EXAMPLE_INJECT_EXCLUDE
+      and len(incl) == min(review.EXAMPLE_INJECT_INCLUDE, n_inc_cand),
+      f"반례 {len(excl)} · 정답 {len(incl)} (정답 후보 {n_inc_cand}건)")
+check("반례와 정답에 칸을 다르게 줄 수 있다",
+      review.EXAMPLE_INJECT_EXCLUDE != review.EXAMPLE_INJECT_INCLUDE,
+      f"{review.EXAMPLE_INJECT_EXCLUDE} + {review.EXAMPLE_INJECT_INCLUDE}")
+check("한 번의 반영이 반례 4칸을 독점하지 못한다",
+      len({e.get("batch") for e in excl}) >= 2
+      and sum(1 for e in excl if e.get("batch") == max(p.get("batch") or 0
+                                                       for p in pool))
+      <= review.EXAMPLE_PER_BATCH,
+      str([(e["quote"], e.get("batch")) for e in excl]))
+check("카테고리가 겹치지 않게 고른다",
+      len({e.get("category") for e in excl}) >= 3,
+      str([e.get("category") for e in excl]))
+
+# 축소 모드의 확정 라벨(gold)은 '모델이 실제로 놓친 것'(miss)보다 뒤로 밀린다
+review.commit_with_log([{"filename": "다른PC분석본.pptx", "mode": "fallback", "items": [
+    {"type": "gold", "quote": f"이미 잡던 표현 {i}", "grade": "A", "risk": False,
+     "category": CATS[i], "snippet": "…"} for i in range(6)]}])
+incl2 = review._pick(review._examples_pool(), "include")
+kinds2 = [e.get("type") for e in incl2]
+first_gold = kinds2.index("gold") if "gold" in kinds2 else len(kinds2)
+check("gold 는 확증된 교정을 다 채운 뒤에만 들어간다",
+      all(k == "gold" for k in kinds2[first_gold:])
+      and not any(k == "gold" for k in kinds2[:first_gold]),
+      str([(e["quote"], e.get("type")) for e in incl2]))
+n_conf = len([e for e in review._examples_pool()
+              if e.get("kind") == "include" and e.get("type") != "gold"])
+check("확증된 교정이 칸보다 많으면 gold 는 하나도 안 들어간다",
+      first_gold == min(len(incl2), n_conf),
+      f"확증 후보 {n_conf}건 · 앞쪽 확증 {first_gold}칸")
+
+# 그래도 gold 밖에 없으면 정상 주입되어야 한다 (칸이 비면 안 됨)
+gold_only = [{"kind": "include", "type": "gold", "quote": f"확정 {i}", "grade": "A",
+              "risk": False, "category": CATS[i], "date": "2026-01-01", "batch": 99,
+              "snippet": "…"} for i in range(6)]
+check("정답 후보가 gold 뿐이어도 칸이 비지 않는다",
+      len(review._pick(gold_only, "include")) == min(6, review.EXAMPLE_INJECT_INCLUDE))
+
+st2 = review.stats()
+pool2 = review._examples_pool()
+want = (len(review._pick(pool2, "exclude")) + len(review._pick(pool2, "include")))
+check("화면용 집계에 보관/주입이 따로 나온다",
+      st2["examples"] > st2["injected"] and st2["injected"] == want,
+      f"보관 {st2['examples']} · 주입 {st2['injected']}")
+
+
+# ── 10. 쌓인 것을 잃지 않는가 ─ 사용하다 보면 실제로 겪는 상황들 ──
+# 아래 네 가지는 모두 "조용히 잘못되는" 부류라, 한 번 깨지면 사용자가 알아채기
+# 어렵습니다. 그래서 상황을 그대로 만들어 놓고 확인합니다.
+def _fresh(sub: str) -> Path:
+    """검사마다 빈 review_data 폴더에서 시작한다 (앞 검사의 이력과 섞이지 않게)."""
+    d = Path(TMP) / sub
+    d.mkdir(parents=True, exist_ok=True)
+    os.environ["PM_REVIEW_DIR"] = str(d)
+    config.REVIEW_DIR = d
+    return d
+
+
+def _commit(name: str, items: list[dict]):
+    return review.commit_with_log([{"filename": name, "mode": "archive",
+                                    "items": items}])
+
+
+_fresh("t10a")
+# (가) [반영 저장] 한 번 = batch 한 개. 검토완료본을 5개 같이 올려도 마찬가지다.
+for i in range(6):                                   # 지난 반영 이력을 쌓아 둔다
+    _commit(f"과거{i}.pptx", [{"type": "miss", "quote": f"과거{i}-{j}", "grade": "B",
+                              "category": f"과거{i}{j}"} for j in range(2)])
+review.commit_with_log([{"filename": f"신규{k}.pptx", "mode": "archive", "items": [
+    {"type": "miss", "quote": f"신규{k}-{j}", "grade": "B",
+     "category": f"신규{k}{j}"} for j in range(2)]} for k in range(5)])
+pool10 = review._examples_pool()
+new_batches = {p["batch"] for p in pool10 if p["quote"].startswith("신규")}
+check("파일을 여러 개 올려도 [반영 저장] 한 번은 batch 하나",
+      len(new_batches) == 1, f"batch {sorted(new_batches)}")
+inc10 = [e["quote"] for e in review._pick(pool10, "include")]
+check("파일을 여러 개 올린 반영도 주입 칸을 독점하지 못한다",
+      sum(1 for q in inc10 if q.startswith("신규")) <= review.EXAMPLE_PER_BATCH,
+      str(inc10))
+
+_fresh("t10b")
+# (나) 사전에 없던 새 표현은 category 가 비어 있다. 이런 예시가 아무리 쌓여도
+#     한 칸으로 뭉개지면, 도구가 가장 배워야 할 재료가 프롬프트에 안 들어간다.
+for i in range(10):
+    _commit(f"기존{i}.pptx", [{"type": "miss", "quote": f"기존{i}", "grade": "B",
+                              "category": f"기존분류{i}"}])
+_commit("새표현.pptx", [{"type": "miss", "quote": f"사전밖표현{j}", "grade": "B",
+                       "category": None} for j in range(12)])
+inc_b = [e["quote"] for e in review._pick(review._examples_pool(), "include")]
+check("카테고리 없는 예시가 한 칸으로 뭉개지지 않는다",
+      sum(1 for q in inc_b if q.startswith("사전밖")) == review.EXAMPLE_PER_BATCH,
+      str(inc_b))
+
+_fresh("t10c")
+# (다) 같은 표현을 나중에 반대로 고쳤다면, 프롬프트에 "빼라"와 "잡아라"가 같이
+#     들어가면 안 된다. 검토가 늘 그렇듯 나중 기록이 이긴다.
+_commit("먼저.pptx", [{"type": "miss", "quote": "자체 개발한 공법", "grade": "A",
+                      "category": "공정·방법"}])
+_commit("나중.pptx", [{"type": "fp", "quote": "자체 개발한 공법",
+                      "category": "공정·방법"}])
+kinds_c = [p["kind"] for p in review._examples_pool() if p["quote"] == "자체 개발한 공법"]
+check("같은 표현이 반례·정답 양쪽에 동시에 남지 않는다",
+      kinds_c == ["exclude"], str(kinds_c))
+
+d10 = _fresh("t10d")
+# (라) examples.json 이 깨졌을 때(전원이 갑자기 꺼지는 등) 다음 [반영 저장] 이
+#     빈 풀을 덮어써 버리면 그동안 쌓은 교정이 통째로 사라진다.
+for i in range(5):
+    _commit(f"보존{i}.pptx", [{"type": "miss", "quote": f"보존{i}", "grade": "B",
+                              "category": f"보존분류{i}"}])
+review._examples_path().write_text('[{"kind": "include", "quo', encoding="utf-8")
+_commit("그다음.pptx", [{"type": "miss", "quote": "그다음", "grade": "B",
+                       "category": "공정·방법"}])
+kept = [p.name for p in d10.iterdir() if p.name.startswith("examples.broken-")]
+check("깨진 examples.json 은 지우지 않고 옆에 보존한다", len(kept) == 1, str(kept))
+check("깨진 파일을 치운 사실이 변경 일지에 남는다",
+      any(e.get("kind") == "examples_recovered" for e in review.change_log()))
+review._rules_path().write_text("{이것도 깨짐", encoding="utf-8")
+review.add_rule("복구확인표현")
+kept_r = [p.name for p in d10.iterdir() if p.name.startswith("extra_rules.broken-")]
+check("깨진 extra_rules.json 도 마찬가지로 보존한다", len(kept_r) == 1, str(kept_r))
+
 print(f"\n{'모두 통과' if fails == 0 else f'{fails}건 실패'}")
 sys.exit(1 if fails else 0)
