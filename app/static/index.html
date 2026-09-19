@@ -89,6 +89,11 @@
   .fhead{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;
     margin:16px 0 8px;font-weight:700;font-size:13.5px}
   .fhead:first-child{margin-top:0}
+  .tlrow{display:flex;gap:9px;align-items:baseline;font-size:12.5px;
+    padding:6px 2px;border-bottom:1px dashed var(--line)}
+  .tlrow:last-child{border-bottom:0}
+  .tlrow .when{color:var(--muted);font-size:11.5px;white-space:nowrap;width:84px}
+  .tlrow .what{flex:1;line-height:1.55}
 
   /* ── 상태줄 ─────────────────────────────────────────────── */
   #health{display:flex;align-items:center;gap:10px;font-size:13.5px;
@@ -236,6 +241,7 @@
         <button class="ghost" id="ragain">다른 파일</button>
         <span class="stage" id="rmsg"></span>
       </div>
+      <div class="hide" id="rreport"></div>
       <div id="rlist"></div>
     </div>
 
@@ -271,6 +277,11 @@
     </div>
 
     <div id="elatest"></div>
+
+    <div class="panel hide" id="etlwrap">
+      <b>개선 타임라인 — 무엇을 바꿨고(반영·사전) → 얼마나 좋아졌나(측정)</b>
+      <div id="etl" style="margin-top:6px"></div>
+    </div>
 
     <div class="panel hide" id="ehistwrap">
       <div class="row" style="margin-bottom:6px">
@@ -489,6 +500,7 @@ async function rupload(){
   const fl = [...rfile.files];
   if(!fl.length) return;
   $("#rres").classList.add("hide");
+  $("#rreport").classList.add("hide");
   $("#rwork").classList.remove("hide");
   const fd = new FormData();
   fl.forEach(f => fd.append("files", f));      // 여러 개를 한 요청에 담는다
@@ -589,6 +601,31 @@ async function addRule(i){
   }catch(e){ msg.textContent = "실패: " + e.message; }
 }
 
+// ── 반영 직후 리포트: 어디가 어떻게 바뀌었는지 ──
+function renderChange(ch){
+  const a = ch.added, parts = [];
+  if(a.miss) parts.push(`누락 ${a.miss}`);
+  if(a.fp) parts.push(`오탐 ${a.fp}`);
+  if(a.regrade) parts.push(`등급변경 ${a.regrade}`);
+  if(a.match + a.gold) parts.push(`일치·확정 ${a.match + a.gold}`);
+  const exTag = e => `<span class="tag ${e.kind === "exclude" ? "fp" : (e.grade || "B")}">` +
+    `${e.kind === "exclude" ? "반례" : "정답"}</span> “${esc(e.quote)}”`;
+  const entered = (ch.examples.entered || []).map(exTag).join("<br>&nbsp;&nbsp;&nbsp;&nbsp;");
+  const left = (ch.examples.left || []).map(e => `“${esc(e.quote)}”`).join(" · ");
+  $("#rreport").innerHTML = `<div class="panel" style="border-left:4px solid var(--accent)">
+    <b>이번 반영으로 바뀐 것</b>
+    <p class="note" style="margin:8px 0 0">
+    ① 교정 기록(dataset.jsonl): ${ch.dataset.before}건 → <b>${ch.dataset.after}건</b>
+       (+${a.total}${parts.length ? ": " + parts.join(" · ") : ""})<br>
+    ② 판정 프롬프트 주입 예시(examples.json): ${ch.examples.before}개 → <b>${ch.examples.after}개</b>
+    ${entered ? `<br>&nbsp;&nbsp;· 새로 주입됨:<br>&nbsp;&nbsp;&nbsp;&nbsp;${entered}` : " — 주입 목록 변화 없음"}
+    ${left ? `<br>&nbsp;&nbsp;· 주입에서 밀려남(기록·평가셋에는 보존): ${left}` : ""}<br>
+    ③ 사전 표현(extra_rules.json): ${ch.rules.before}개 → <b>${ch.rules.after}개</b><br>
+    이 내역은 변경 일지에 저장되어 <b>[성능 기록]</b> 탭의 개선 타임라인에서 측정 결과와 함께 계속 볼 수 있습니다.</p>
+  </div>`;
+  $("#rreport").classList.remove("hide");
+}
+
 // ── [반영 저장] ── 반영 대상 파일 전부를 한 번에 저장
 $("#rsave").onclick = async () => {
   if(!rvalid.length) return;
@@ -602,6 +639,7 @@ $("#rsave").onclick = async () => {
     if(!r.ok) throw new Error(j.detail || "저장 실패");
     $("#rmsg").textContent =
       `저장 완료 — 파일 ${j.saved_files}개 · ${j.saved_items}건. 다음 분석부터 프롬프트 예시에 반영됩니다.`;
+    if(j.change) renderChange(j.change);
     rstats();
   }catch(e){
     $("#rsave").disabled = false;
@@ -611,10 +649,11 @@ $("#rsave").onclick = async () => {
 $("#ragain").onclick = () => {
   rdata = null; rfile.value = "";
   $("#rres").classList.add("hide");
+  $("#rreport").classList.add("hide");
 };
 
 // ═════════════ 성능 기록 탭 ═════════════
-let eTimer = null, eEntries = [];
+let eTimer = null, eEntries = [], eChanges = [];
 
 // 지표 표시: 값이 없으면(분모 0) 대시
 const fmt = v => v == null ? "–" : v + "%";
@@ -639,6 +678,7 @@ async function ehistory(){
   try{
     const j = await (await fetch("/api/eval/history")).json();
     eEntries = j.entries || [];
+    eChanges = j.changes || [];
     const s = j.eval_set || {};
     $("#eset").innerHTML = s.paras
       ? `현재 문제지 — 문단 <b>${s.paras}</b>개 · 확정 정답 <b>${s.golds}</b>구간 · ` +
@@ -646,8 +686,55 @@ async function ehistory(){
       : `아직 문제지가 없습니다 — 먼저 [검토 반영] 탭에서 검토완료본을 올려 [반영 저장] 을 해 주세요.`;
     $("#erun").disabled = !s.paras;
     renderLatest();
+    renderTimeline();
     renderHist();
   }catch(err){ $("#eset").textContent = ""; }
+}
+
+// ── 개선 타임라인: 변경 일지(반영·사전)와 측정 회차를 시간순으로 섞어서 ──
+function timelineItems(){
+  const items = [];
+  for(const c of eChanges){
+    if(c.kind === "review_commit"){
+      const a = c.added || {}, ex = c.examples || {};
+      const d = [];
+      if(a.miss) d.push(`누락 ${a.miss}`);
+      if(a.fp) d.push(`오탐 ${a.fp}`);
+      if(a.regrade) d.push(`등급변경 ${a.regrade}`);
+      if(a.match + a.gold) d.push(`일치·확정 ${(a.match||0)+(a.gold||0)}`);
+      const exs = [];
+      if((ex.entered||[]).length) exs.push(`예시 주입 +${ex.entered.length} (${ex.entered.slice(0,2).map(e=>`“${esc(e.quote)}”`).join(", ")}${ex.entered.length>2?" 외":""})`);
+      if((ex.left||[]).length) exs.push(`예시 교체 −${ex.left.length}`);
+      items.push({ts: c.ts, html:
+        `<span class="tag miss">반영</span> 검토완료본 ${ (c.files||[]).length }개 · ${a.total}건` +
+        (d.length ? ` (${d.join(" · ")})` : "") +
+        ` — 교정 기록 ${c.dataset.before}→${c.dataset.after}건` +
+        (exs.length ? ` · ${exs.join(" · ")}` : "")});
+    } else if(c.kind === "rule_add"){
+      items.push({ts: c.ts, html:
+        `<span class="tag">사전</span> “${esc(c.keyword)}” 등록 — 다음 분석부터 반드시 잡음 (사전 표현 ${c.rules_after}개)`});
+    }
+  }
+  for(const e of eEntries){
+    items.push({ts: e.ts, html:
+      `<span class="tag B">측정</span> ${e.run_no}회차 — 최초 F1 ${fmt(e.baseline.f1)} → 현재 ${fmt(e.current.f1)}` +
+      (e.delta.f1 != null ? ` ${fmtD(e.delta.f1)}` : "") +
+      ` · 문제지 ${e.eval_set.golds}구간`});
+  }
+  items.sort((x,y) => (x.ts||"").localeCompare(y.ts||""));
+  return items;
+}
+
+function renderTimeline(){
+  const items = timelineItems();
+  const wrap = $("#etlwrap");
+  if(!items.length){ wrap.classList.add("hide"); return; }
+  wrap.classList.remove("hide");
+  const MAX = 40;
+  const shown = items.slice(-MAX);
+  $("#etl").innerHTML =
+    (items.length > MAX ? `<div class="tlrow"><span class="when"></span><span class="what stage">…이전 ${items.length-MAX}건 생략 (전체는 review_data/change_log.jsonl)</span></div>` : "") +
+    shown.map(it => `<div class="tlrow"><span class="when">${esc((it.ts||"").slice(5,16).replace("T"," "))}</span><span class="what">${it.html}</span></div>`).join("");
 }
 
 // ── 최신 회차: 최초 vs 현재 비교 카드 ──
@@ -759,6 +846,15 @@ $("#ecopy").onclick = async () => {
       `${fmt(e.baseline.f1)} → ${fmt(e.current.f1)} | ${e.delta.f1 == null ? "–" : (e.delta.f1>0?"+":"")+e.delta.f1+"%p"} |`),
     "",
     "※ 같은 회차 안에서 최초 설정과 현재 설정을 동일 문제지(사내 검토로 확정된 정답)로 채점한 결과.",
+    "",
+    "## 개선 타임라인 (무엇을 바꿨고 → 얼마나 좋아졌나)",
+    ...timelineItems().map(it => {
+      // 화면용 HTML 을 텍스트로: 이름표 <span>반영</span> → [반영]
+      const text = it.html
+        .replace(/<span[^>]*>/g, "[").replace(/<\/span>/g, "]")
+        .replace(/<[^>]*>/g, "");
+      return `- ${(it.ts||"").slice(0,16).replace("T"," ")}  ${text}`;
+    }),
   ].join("\n");
   try{
     await navigator.clipboard.writeText(rows);
