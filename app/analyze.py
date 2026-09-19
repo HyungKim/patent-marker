@@ -278,7 +278,9 @@ def analyze_slide(deck_title: str, slide_no: int, total: int,
     if not segs:
         return []
     # 시스템 프롬프트와 답변 몫을 빼고 남는 만큼만 본문에 쓴다 (한글 1자 ≒ 1토큰 가정)
-    budget = max(config.NUM_CTX - len(SYSTEM) - 1500, 1200)
+    # SYSTEM 만이 아니라 뒤에 붙는 '사내 확정 사례' 블록까지 포함한 실제 길이를 뺀다.
+    # (블록을 빼지 않으면 예산을 실제보다 크게 잡아 모델 답변 몫이 모자랄 수 있다)
+    budget = max(config.NUM_CTX - len(_system_prompt()) - 1500, 1200)
     out: list[Finding] = []
     for chunk in _batch(segs, budget):
         out += _analyze_batch(deck_title, slide_no, total, chunk, hints, opts)

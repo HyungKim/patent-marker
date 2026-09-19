@@ -255,8 +255,18 @@ def _config_snapshot() -> dict:
     except Exception:
         pass
     st = review.stats()
+    # examples = 쌓인 풀 크기, injected = 실제로 프롬프트에 들어간 칸 수.
+    # 프롬프트를 바꾸는 것은 injected 쪽이다. 풀은 계속 커지지만 판정에는 영향이 없으므로
+    # 둘을 나눠 기록해야 "점수가 왜 올랐는지" 를 나중에 설명할 수 있다.
     return {"model": config.MODEL, "rules": rules,
-            "examples": st["examples"], "dataset": st["dataset"]}
+            "examples": st["examples"], "injected": st["injected"],
+            "dataset": st["dataset"]}
+
+
+def _injected_change(prev_n, now_n) -> str | None:
+    if prev_n is None:
+        return f"기록 없음 → {now_n}"
+    return f"{prev_n} → {now_n}" if prev_n != now_n else None
 
 
 def _changes(prev: dict | None, snap: dict) -> dict | None:
@@ -268,6 +278,11 @@ def _changes(prev: dict | None, snap: dict) -> dict | None:
         "rules_added": [r for r in snap["rules"] if r not in (p.get("rules") or [])],
         "rules_removed": [r for r in (p.get("rules") or []) if r not in snap["rules"]],
         "examples_delta": snap["examples"] - (p.get("examples") or 0),
+        # 주입 칸 수가 달라졌다면 프롬프트 자체가 바뀐 것이라 회차 간 비교가 끊긴다.
+        # 점수 변화의 원인이 '교정이 좋아져서' 가 아닐 수 있으므로 반드시 표시한다.
+        # 이 항목이 없던 예전 회차(= 도구를 올린 직후 첫 회차)는 프롬프트가 가장 크게
+        # 바뀐 회차인데도 '변경 없음' 으로 보이므로, 모른다는 사실을 그대로 적는다.
+        "injected_change": _injected_change(p.get("injected"), snap["injected"]),
         "dataset_delta": snap["dataset"] - (p.get("dataset") or 0),
         "model_change": (f'{p.get("model")} → {snap["model"]}'
                          if p.get("model") and p.get("model") != snap["model"] else None),
@@ -343,6 +358,9 @@ def run_sync(note: str = "") -> dict:
 
     base_system = analyze.SYSTEM                       # 예시 주입 없는 원래 지시서
     cur_system = analyze._system_prompt()              # 확정 사례가 붙은 지시서
+    # 스냅샷은 '이번 회차가 실제로 쓴 설정' 이어야 한다. 채점이 끝난 뒤에 찍으면
+    # 측정 도중에 [반영 저장] 이 들어온 경우 쓰지도 않은 설정이 기록된다.
+    snap = _config_snapshot()
     paras = es["paras"]
     STATE.update(total=_total_batches(paras, [base_system, cur_system]), done=0)
 
@@ -370,7 +388,6 @@ def run_sync(note: str = "") -> dict:
         return round(a - b, 1) if a is not None and b is not None else None
 
     prev_entries = history()
-    snap = _config_snapshot()
     entry = {
         "run_no": len(prev_entries) + 1,
         "ts": datetime.datetime.now().isoformat(timespec="seconds"),
