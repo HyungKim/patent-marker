@@ -179,7 +179,7 @@
       <input type="file" id="file" accept=".pptx,.potx">
     </div>
     <div class="row" style="margin-top:16px">
-      <label class="opt"><input type="checkbox" id="optTag" checked> 【특허검토필요】 문구 표시</label>
+      <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례와 배지로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
       <label class="opt"><input type="checkbox" id="optSummary" checked> 요약 슬라이드 추가</label>
       <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
       <label class="opt"><input type="checkbox" id="optC"> C등급(참고)도 포함</label>
@@ -549,7 +549,7 @@ function renderReview(){
     else if(!(f.items||[]).length)
       warns.push(`⚠ ${esc(f.filename)} — 형광펜 구간이 없습니다. 검토완료본이 맞는지 확인하세요 (제외).`);
     else if(f.mode === "fallback")
-      warns.push(`ℹ ${esc(f.filename)} — 분석 기록이 없어 축소 모드: 형광펜은 '확정', 고아 【특허검토필요】 문구는 '오탐 추정'으로 수집합니다.`);
+      warns.push(`ℹ ${esc(f.filename)} — 분석 기록이 없어 축소 모드: 형광펜은 '확정'으로 수집합니다 (문구 옵션을 켜고 만든 파일이면 형광펜만 지워진 자리의 【출원검토필요】 문구를 '오탐 추정'으로 수집).`);
   }
   const nb = $("#rnote");
   if(warns.length){ nb.innerHTML = warns.join("<br>"); nb.classList.remove("hide"); }
