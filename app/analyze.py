@@ -287,12 +287,17 @@ def analyze_slide(deck_title: str, slide_no: int, total: int,
 
 def _analyze_batch(deck_title: str, slide_no: int, total: int,
                    segs: list[Segment], hints: dict[int, list[str]],
-                   opts: config.RunOptions) -> list[Finding]:
-    """문단 묶음 하나를 Ollama 에 보내고 Finding 목록으로 바꾼다. ← 모델을 실제로 부르는 곳"""
+                   opts: config.RunOptions,
+                   system_override: str | None = None) -> list[Finding]:
+    """문단 묶음 하나를 Ollama 에 보내고 Finding 목록으로 바꾼다. ← 모델을 실제로 부르는 곳
+
+    system_override 는 성능 측정(evaluate.py)이 "최초 설정 프롬프트" 로
+    채점할 때만 넘깁니다. 평소 분석에서는 None 이라 _system_prompt() 를 씁니다.
+    """
     payload = {
-        "model": opts.model,                      # 예: qwen3:14b
+        "model": opts.model,                      # 예: qwen3:8b
         "messages": [
-            {"role": "system", "content": _system_prompt()},
+            {"role": "system", "content": system_override or _system_prompt()},
             {"role": "user",
              "content": _build_user_prompt(deck_title, slide_no, total, segs, hints)},
         ],

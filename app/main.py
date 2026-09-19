@@ -40,7 +40,7 @@ from fastapi import Body, FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import analyze, config, extract, mark, merge, review
+from . import analyze, config, evaluate, extract, mark, merge, review
 
 # 화면 파일(index.html)이 있는 폴더
 STATIC = Path(__file__).parent / "static"
@@ -336,6 +336,40 @@ async def review_rule(payload: dict = Body(...)) -> JSONResponse:
 def review_stats() -> JSONResponse:
     """누적 현황 — 데이터 건수·예시 수·추가된 사전 표현 수."""
     return JSONResponse(review.stats())
+
+
+# ═════════════════════════════════════════════════════════════════
+# [성능 기록] 탭 ─ 최초 설정 vs 현재 설정을 같은 문제지로 채점해 이력 누적
+# ═════════════════════════════════════════════════════════════════
+@app.post("/api/eval/run")
+async def eval_run(payload: dict | None = Body(default=None)) -> JSONResponse:
+    """성능 측정 시작. 문단 묶음마다 모델을 두 번(최초·현재) 부르므로 몇 분 걸린다."""
+    try:
+        evaluate.start(note=(payload or {}).get("note") or "")
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/eval/status")
+def eval_status() -> JSONResponse:
+    """측정 진행 상황. 화면이 주기적으로 호출한다."""
+    return JSONResponse(evaluate.status())
+
+
+@app.post("/api/eval/cancel")
+def eval_cancel() -> JSONResponse:
+    """측정 중단 요청. 다음 문단 묶음으로 넘어갈 때 멈춘다."""
+    evaluate.cancel()
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/eval/history")
+def eval_history() -> JSONResponse:
+    """누적 측정 이력 + 현재 평가셋 규모. [성능 기록] 탭이 그린다."""
+    return JSONResponse({"entries": evaluate.history(),
+                         "eval_set": evaluate.eval_set_summary(),
+                         "stats": review.stats()})
 
 
 # /static/... 주소로 static 폴더의 파일을 그대로 내어 준다
