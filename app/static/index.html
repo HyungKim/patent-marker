@@ -179,10 +179,8 @@
       <input type="file" id="file" accept=".pptx,.potx">
     </div>
     <div class="row" style="margin-top:16px">
-      <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례와 배지로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
-      <label class="opt"><input type="checkbox" id="optSummary" checked> 요약 슬라이드 추가</label>
+      <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
       <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
-      <label class="opt"><input type="checkbox" id="optC"> C등급(참고)도 포함</label>
       <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
       <div class="grow"></div>
       <button id="go" disabled>분석 시작</button>
@@ -210,7 +208,7 @@
     <p class="note">
       본 결과는 변리사 검토 전 <b>1차 스크리닝</b>입니다. 선행기술 조사와 신규성·진보성 판단은 포함되어 있지 않습니다.<br>
       <b>묵시</b> 표시는 구체적 기술 수단이 문면에 없지만 존재가 시사되는 구간으로, 발명자 인터뷰로 내용을 확인해야 하는 후보입니다.<br>
-      <b>⚠공개</b> 표시는 전시·발표·납품 등으로 신규성이 상실됐을 수 있는 구간이며 출원 기한 확인이 필요합니다.
+      <b>C 공개 관련정보</b> 표시는 전시·발표·납품 등으로 이미 밖에 나갔을 수 있는 구간입니다. 공개 전에 출원을 끝냈어야 하는 대상입니다.
     </p>
   </div>
   </div><!-- /viewAnalyze -->
@@ -226,7 +224,7 @@
       <p class="note" style="margin-bottom:0">
         <b>검토 방법</b> — 마킹된 PPTX 를 PowerPoint 로 열어:
         잘못 잡은 곳은 <b>형광펜을 지우고</b>, 놓친 곳은 <b>새로 칠하고</b>, 등급이 틀리면 <b>색을 바꿔</b> 저장한 뒤 여기에 올립니다.<br>
-        색 규약: <b>노랑 계열 = A</b>(수단이 드러남) · <b>하늘/파랑 계열 = B</b>(묵시) · <b>살구/빨강 계열 = ⚠ 공개 리스크</b>
+        색 규약: <b>노랑 계열 = A</b>(수단이 드러남) · <b>하늘/파랑 계열 = B</b>(묵시) · <b>살구/빨강 계열 = C</b>(공개 관련정보)
         — PowerPoint 기본 형광펜 색을 그대로 써도 됩니다(비슷한 색으로 자동 인식).
       </p>
     </div>
@@ -352,9 +350,7 @@ $("#go").onclick = async () => {
   const fd = new FormData();           // 파일 업로드용 묶음
   fd.append("file", f);
   fd.append("think", $("#optThink").checked);
-  fd.append("include_grade_c", $("#optC").checked);
   fd.append("scan_all", $("#optScanAll").checked);
-  fd.append("add_summary", $("#optSummary").checked);
   fd.append("tag_marks", $("#optTag").checked);
 
   $("#setup").classList.add("hide");
@@ -423,11 +419,11 @@ function render(st){
     [g.A ?? 0, "A · 즉시 출원 검토"],
     [g.B ?? 0, "B · 발명 발굴 필요"],
     [st.implicit ?? 0, "묵시적 표현"],
-    [st.disclosure_risk ?? 0, "⚠ 공개 리스크"],
+    [st.disclosure_risk ?? 0, "C 공개 관련정보"],
   ].map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
 
   const opts = [["ALL","전체"],["A","A 등급"],["B","B 등급"],
-                ["IMP","묵시적 표현"],["RISK","⚠ 공개 리스크"]];
+                ["IMP","묵시적 표현"],["RISK","C 공개 관련정보"]];
   $("#filters").innerHTML = opts.map(([k,l]) =>
     `<span class="chip${k===filter?" on":""}" data-k="${k}">${l}</span>`).join("");
   $("#filters").querySelectorAll(".chip").forEach(c => c.onclick = () => {
@@ -442,7 +438,7 @@ function render(st){
   $("#list").innerHTML = rows.length ? rows.map(f => {
     const cls = f.disclosure_risk ? "risk" : "g" + f.grade;
     const tags = [`<span class="tag ${f.grade}">${f.grade}</span>`];
-    if(f.disclosure_risk) tags.push(`<span class="tag R">⚠ 공개</span>`);
+    if(f.disclosure_risk) tags.push(`<span class="tag R">C 공개</span>`);
     if(f.implicit) tags.push(`<span class="tag">묵시</span>`);
     if(f.source === "lexicon") tags.push(`<span class="tag">규칙 사전</span>`);
     return `<div class="find ${cls}">
@@ -582,9 +578,9 @@ function renderReview(){
       const border = it.risk ? "risk" : (it.grade ? "g"+it.grade : "gC");
       const tags = [`<span class="tag ${cls}">${label}</span>`];
       if(it.grade) tags.push(`<span class="tag ${it.grade}">${it.grade}</span>`);
-      if(it.risk) tags.push(`<span class="tag R">⚠ 공개</span>`);
+      if(it.risk) tags.push(`<span class="tag R">C 공개</span>`);
       if(it.type === "regrade")
-        tags.push(`<span class="tag">모델 판정: ${it.from_grade}${it.from_risk?"·⚠":""}</span>`);
+        tags.push(`<span class="tag">모델 판정: ${it.from_grade}${it.from_risk?"·C":""}</span>`);
       if(it.lexicon_gap) tags.push(`<span class="tag">사전 미포착</span>`);
       const rule = it.lexicon_gap
         ? `<div class="rulebox"><input type="text" id="rk${i}" value="${esc((it.quote||"").slice(0,30))}">
