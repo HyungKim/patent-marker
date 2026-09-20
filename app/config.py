@@ -138,9 +138,19 @@ CATEGORIES = [
 #   extra_rules.json  [사전에 추가] 버튼으로 등록한 표현 (다음 분석부터 반드시 잡음)
 from pathlib import Path as _Path
 
-REVIEW_DIR = _Path(os.environ.get(
-    "PM_REVIEW_DIR", str(_Path(__file__).resolve().parents[1] / "review_data")
-))
+_ROOT = _Path(__file__).resolve().parents[1]        # patent_marker 폴더
+
+REVIEW_DIR = _Path(os.environ.get("PM_REVIEW_DIR", str(_ROOT / "review_data")))
+
+# ─────────────────────────────────────────────────────────────────
+# 7. 브라우저 업로드 없이 파일을 주고받는 폴더
+# ─────────────────────────────────────────────────────────────────
+# 회사 PC 처럼 브라우저의 파일 올리기가 막힌 곳에서는 여기에 PPTX 를 복사해 두면
+# 웹 화면의 목록에 나타나고, 결과는 output 폴더에 바로 저장됩니다. (app/local.py)
+#   input\    분석할 PPTX 를 넣는 곳 (검토완료본도 여기)
+#   output\   마킹된 결과가 저장되는 곳  →  이름_특허마킹.pptx
+INPUT_DIR = _Path(os.environ.get("PM_INPUT_DIR", str(_ROOT / "input")))
+OUTPUT_DIR = _Path(os.environ.get("PM_OUTPUT_DIR", str(_ROOT / "output")))
 
 
 @dataclass
