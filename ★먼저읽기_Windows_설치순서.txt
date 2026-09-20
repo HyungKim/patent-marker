@@ -8,7 +8,9 @@
 GitHub 에서 내려받은 경우 요약 (★ 처음 설치할 때):
   1) 초록 Code 버튼 → Download ZIP → C:\ 에 풀기 → 폴더명을 patent_marker 로 변경
   2) setup.bat 더블클릭 (인터넷 필요 · Python·Ollama·모델 5GB 자동 설치)
-  3) run.bat 더블클릭 → 브라우저에서 PPTX 올리고 분석 시작
+  3) run.bat 더블클릭 → PPTX 를 C:\patent_marker\input 폴더에 복사 → 브라우저 목록에서 클릭 → 분석 시작
+     (회사 PC 처럼 브라우저 업로드가 막혀 있어도 됩니다. 결과는 output 폴더에 저장됩니다)
+     브라우저 없이 쓰려면: PPTX 를 mark.bat 아이콘 위에 끌어다 놓기
      (기본 모델은 가벼운 qwen3:8b — GPU 없는 PC 도 이대로 하면 됩니다)
 
 USB 로 받은 15GB 압축본(offline_bundle 포함)을 쓰는 경우에는 setup.bat 대신
