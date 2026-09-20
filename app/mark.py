@@ -3,12 +3,11 @@ mark.py ─ 분석 결과를 PPTX 파일에 실제로 "그려 넣는" 단계
 =====================================================================
 
 [이 파일이 하는 일]
-  merge.py 가 확정한 "어디를 칠할지"(Mark 목록)를 받아 PPTX 에 네 가지를 남깁니다.
+  merge.py 가 확정한 "어디를 칠할지"(Mark 목록)를 받아 PPTX 에 두 가지만 남깁니다.
+  원본을 최대한 그대로 두기 위해, 배지·발표자 노트·요약 슬라이드는 붙이지 않습니다.
 
     1. 본문 형광펜      : 해당 어구만 등급 색으로 칠함 (+ 같은 색 밑줄)
     2. 첫 슬라이드 범례 : "출원검토필요 표시 안내" 상자 — 색상별 뜻을 한 번만 안내
-    3. 슬라이드 배지    : 마킹이 있는 슬라이드 오른쪽 위에 "출원검토필요 N건"
-    4. 노트 주석 + 요약 슬라이드 : 근거와 전체 목록을 문서 안에 남김
     (+ 선택) 【출원검토필요】 문구 : 흑백 인쇄용. 형광펜 구간 뒤에 붙임. 기본은 끔.
 
 [초보자를 위한 배경 지식 ─ PPTX 의 속사정]
@@ -317,59 +316,18 @@ def highlight(p_el, span: tuple[int, int] | None, color: str, dark_bg: bool,
 
 
 # ═════════════════════════════════════════════════════════════════
-# 6. 슬라이드 배지 ─ 오른쪽 위 "출원검토필요 N건"
+# 6. 첫 슬라이드 범례 ─ "출원검토필요 표시 안내" 상자
 # ═════════════════════════════════════════════════════════════════
-def add_slide_badges(deck: Deck, findings: list[Finding],
-                     text: str, color: str) -> int:
-    """마킹이 있는 슬라이드마다 오른쪽 위에 작은 빨간 배지를 붙인다."""
-    counts: dict[int, int] = {}
-    for f in findings:
-        counts[f.slide_no] = counts.get(f.slide_no, 0) + 1
-
-    prs = deck.prs
-    w, h = Inches(1.9), Inches(0.34)
-    added = 0
-    for idx, slide in enumerate(prs.slides, 1):
-        n = counts.get(idx)
-        if not n:
-            continue
-        shp = slide.shapes.add_shape(
-            MSO_SHAPE.ROUNDED_RECTANGLE,
-            prs.slide_width - w - Inches(0.2), Inches(0.12), w, h,
-        )
-        shp.name = config.BADGE_NAME
-        shp.fill.solid()
-        shp.fill.fore_color.rgb = RGBColor.from_string(color)
-        shp.line.fill.background()        # 테두리 없음
-        shp.shadow.inherit = False        # 그림자 없음
-        tf = shp.text_frame
-        tf.margin_left = tf.margin_right = Inches(0.08)
-        tf.margin_top = tf.margin_bottom = Inches(0.02)
-        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        p = tf.paragraphs[0]
-        p.alignment = PP_ALIGN.CENTER
-        r = p.add_run()
-        r.text = f"{text} {n}건"
-        r.font.size = Pt(10.5)
-        r.font.bold = True
-        r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-        added += 1
-    return added
-
-
-# ═════════════════════════════════════════════════════════════════
-# 6.5 첫 슬라이드 범례 ─ "출원검토필요 표시 안내" 상자
-# ═════════════════════════════════════════════════════════════════
-# 형광펜 색이 무슨 뜻인지를 문서 안에서 한 번만 안내한다. 구간마다 문구를 붙이지
-# 않아도 읽는 사람이 첫 장에서 규약을 알 수 있게 하는 장치.
+# 형광펜 색이 무슨 뜻인지를 문서 안에서 한 번만 안내한다. 원본에 덧붙이는 것은
+# 이 상자 하나뿐이다(배지·요약 슬라이드·발표자 노트는 붙이지 않는다).
 #   (등급 문자, 형광펜 색, 설명)
 LEGEND_ROWS = [
     ("A", config.GRADE_COLOR["A"], "즉시 출원 검토 — 구체적 기술 수단이 드러남"),
     ("B", config.GRADE_COLOR["B"], "발명 발굴 필요 — 수단은 없으나 존재가 시사됨"),
-    ("⚠", config.GRADE_COLOR["R"], "공개 리스크 — 전시·논문 등 이미 공개된 내용"),
+    ("C", config.GRADE_COLOR["C"], "공개전 출원완료 필요"),
 ]
 LEGEND_FOOT = ["형광펜(밑줄) 구간 = 출원 검토 필요",
-               "근거: 발표자 노트  ·  전체 목록: 마지막 슬라이드"]
+               "변리사 검토 전 1차 스크리닝 결과"]
 LEGEND_W, LEGEND_H = Inches(4.15), Inches(1.38)
 _EMU_IN = 914400
 
@@ -476,145 +434,14 @@ def add_legend(deck: Deck, title: str, color: str) -> int:
 
 
 # ═════════════════════════════════════════════════════════════════
-# 7. 발표자 노트 주석
-# ═════════════════════════════════════════════════════════════════
-BANNER = "━━━━━━ 출원 검토 마킹 (자동 생성) ━━━━━━"
-
-LEGEND_LINES = [
-    "【 범례 】",
-    f"  ■ A ({config.GRADE_COLOR['A']}) 즉시 출원 검토 — 구체적 기술 수단이 문면에 드러남",
-    f"  ■ B ({config.GRADE_COLOR['B']}) 발명 발굴 필요 — 수단은 미기재이나 존재가 시사됨",
-    f"  ■ ⚠ ({config.GRADE_COLOR['R']}) 공개 리스크 — 신규성 상실 우려, 기한 확인 필요",
-    "  형광펜(밑줄) 구간이 출원 검토가 필요한 곳입니다. 색 안내는 첫 슬라이드의 범례 상자에 있습니다.",
-    "",
-    "본 마킹은 변리사 검토 전 1차 스크리닝 결과입니다.",
-    "선행기술 조사와 신규성·진보성 판단은 포함되어 있지 않습니다.",
-]
-
-
-def _add_lines(tf, lines: list[str], size=10, bold_first=False):
-    """텍스트 프레임 끝에 여러 줄을 덧붙인다."""
-    for i, line in enumerate(lines):
-        p = tf.add_paragraph()
-        p.text = line
-        for run in p.runs:
-            run.font.size = Pt(size)
-            if bold_first and i == 0:
-                run.font.bold = True
-
-
-def annotate_notes(deck: Deck, findings: list[Finding]) -> None:
-    """슬라이드마다 발표자 노트 끝에 [등급 · 유형] "인용구" → 근거 를 적는다."""
-    by_slide: dict[int, list[Finding]] = {}
-    for f in findings:
-        by_slide.setdefault(f.slide_no, []).append(f)
-
-    for idx, slide in enumerate(deck.prs.slides, 1):
-        items = by_slide.get(idx)
-        if not items:
-            continue
-        tf = slide.notes_slide.notes_text_frame
-        lines = ["", BANNER]
-        for f in items:
-            tags = [f.grade]
-            if f.implicit:
-                tags.append("묵시")
-            if f.disclosure_risk:
-                tags.append("⚠공개")
-            if f.source == "lexicon":
-                tags.append("규칙")
-            head = f"[{' · '.join(tags)} · {f.category}] “{f.quote.strip()}”"
-            lines.append(head)
-            if f.reason:
-                lines.append(f"    → {f.reason}")
-        if idx == 1:                       # 첫 슬라이드 노트에만 범례를 붙인다
-            lines += [""] + LEGEND_LINES
-        _add_lines(tf, lines)
-
-
-# ═════════════════════════════════════════════════════════════════
-# 8. 요약 슬라이드 (문서 끝에 추가)
-# ═════════════════════════════════════════════════════════════════
-SUMMARY_TITLE = "출원 검토 마킹 요약"      # review.py 가 이 제목으로 요약 슬라이드를 알아본다
-
-
-def _blank_layout(prs):
-    """자리표시자(placeholder)가 가장 적은 레이아웃 = 빈 화면에 가장 가까운 것."""
-    return min(prs.slide_layouts, key=lambda l: len(l.placeholders))
-
-
-def append_summary(deck: Deck, findings: list[Finding], rows_per_slide: int = 13) -> None:
-    """후보 목록과 집계를 담은 요약 슬라이드를 문서 끝에 붙인다. 13건마다 한 장."""
-    prs = deck.prs
-    layout = _blank_layout(prs)
-    sw = prs.slide_width / 914400          # EMU → inch (1 inch = 914400 EMU)
-    sh = prs.slide_height / 914400
-
-    counts = {"A": 0, "B": 0, "C": 0}
-    risk = 0
-    for f in findings:
-        counts[f.grade] = counts.get(f.grade, 0) + 1
-        if f.disclosure_risk:
-            risk += 1
-
-    rows = [
-        (f"p{f.slide_no}", f.grade, f.category, f.quote.strip().replace("\n", " "),
-         f.disclosure_risk, f.implicit)
-        for f in findings
-    ]
-    pages = [rows[i:i + rows_per_slide] for i in range(0, len(rows), rows_per_slide)] or [[]]
-
-    for pno, page in enumerate(pages, 1):
-        slide = prs.slides.add_slide(layout)
-        for shp in list(slide.shapes):      # 레이아웃이 남긴 빈 자리표시자 제거
-            if shp.is_placeholder:
-                shp._element.getparent().remove(shp._element)
-
-        title = slide.shapes.add_textbox(Inches(0.6), Inches(0.45),
-                                         Inches(sw - 1.2), Inches(0.5))
-        tp = title.text_frame.paragraphs[0]
-        tp.text = SUMMARY_TITLE + (f" ({pno}/{len(pages)})" if len(pages) > 1 else "")
-        tp.runs[0].font.size = Pt(24)
-        tp.runs[0].font.bold = True
-
-        sub = slide.shapes.add_textbox(Inches(0.6), Inches(1.0),
-                                       Inches(sw - 1.2), Inches(0.32))
-        sp = sub.text_frame.paragraphs[0]
-        sp.text = (f"A(즉시 출원 검토) {counts['A']}건   ·   "
-                   f"B(발명 발굴 필요) {counts['B']}건   ·   "
-                   f"⚠ 공개 리스크 {risk}건")
-        sp.runs[0].font.size = Pt(12)
-
-        body = slide.shapes.add_textbox(Inches(0.6), Inches(1.45),
-                                        Inches(sw - 1.2), Inches(sh - 2.3))
-        btf = body.text_frame
-        btf.word_wrap = True
-        first = True
-        for loc, grade, cat, quote, is_risk, is_imp in page:
-            p = btf.paragraphs[0] if first else btf.add_paragraph()
-            first = False
-            flags = grade + ("·묵시" if is_imp else "") + ("·⚠공개" if is_risk else "")
-            snippet = quote if len(quote) <= 54 else quote[:54] + "…"
-            p.text = f"{loc}  [{flags}]  {cat}  |  {snippet}"
-            for r in p.runs:
-                r.font.size = Pt(11)
-
-        note = slide.shapes.add_textbox(Inches(0.6), Inches(sh - 0.75),
-                                        Inches(sw - 1.2), Inches(0.3))
-        np_ = note.text_frame.paragraphs[0]
-        np_.text = ("자동 스크리닝 결과 · 변리사 검토 전 1차 후보 · "
-                    "선행기술 조사 및 신규성·진보성 판단 미포함")
-        np_.runs[0].font.size = Pt(9)
-
-        _add_lines(slide.notes_slide.notes_text_frame, LEGEND_LINES)
-
-
-# ═════════════════════════════════════════════════════════════════
-# 9. 진입점 ─ main.py 가 호출하는 함수
+# 7. 진입점 ─ main.py 가 호출하는 함수
 # ═════════════════════════════════════════════════════════════════
 def apply(deck: Deck, findings: list[Finding], marks: list[Mark],
-          add_summary: bool = True, tag_marks: bool = False) -> dict:
-    """모든 마킹을 한 번에 적용한다. 파일 저장은 호출한 쪽(main.py)이 한다."""
+          tag_marks: bool = False) -> dict:
+    """모든 마킹을 한 번에 적용한다. 파일 저장은 호출한 쪽(main.py)이 한다.
+
+    원본에 덧붙이는 것은 형광펜(+밑줄)과 첫 슬라이드의 범례 상자 하나뿐이다.
+    """
     seg_map = {s.seg_id: s for s in deck.segments}
 
     # 같은 문단 안에서는 "오른쪽 구간부터" 처리한다.
@@ -629,22 +456,17 @@ def apply(deck: Deck, findings: list[Finding], marks: list[Mark],
         seg = seg_map.get(m.seg_id)
         if seg is None or seg.para is None:
             continue
-        color = config.GRADE_COLOR["R"] if m.disclosure_risk else config.GRADE_COLOR[m.grade]
+        # 공개 신호가 붙은 구간은 등급과 무관하게 C(공개 관련정보) 색으로 칠한다.
+        color = config.GRADE_COLOR["C" if m.disclosure_risk else m.grade]
         n_run, n_tag = highlight(seg.para._p, m.span, color,
                                  _background_is_dark(seg.shape, seg.slide),
                                  tag_text, config.TAG_COLOR)
         painted += n_run
         tags += n_tag
 
-    badges = 0
-    if findings and config.SLIDE_BADGE:
-        badges = add_slide_badges(deck, findings, config.BADGE_TEXT, config.TAG_COLOR)
     legend = 0
     if findings and config.SLIDE_LEGEND:
         legend = add_legend(deck, config.LEGEND_TITLE, config.TAG_COLOR)
 
-    annotate_notes(deck, findings)
-    if add_summary:
-        append_summary(deck, findings)
     return {"runs_painted": painted, "marks": len(marks), "tags": tags,
-            "badges": badges, "legend": legend}
+            "legend": legend}

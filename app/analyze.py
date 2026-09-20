@@ -51,7 +51,7 @@ SCHEMA = {
                     "grade": {"type": "string", "enum": ["A", "B", "C"]},
                     "category": {"type": "string", "enum": config.CATEGORIES},
                     "implicit": {"type": "boolean"},                     # 묵시적 표현인가
-                    "disclosure_risk": {"type": "boolean"},              # 공개 리스크인가
+                    "disclosure_risk": {"type": "boolean"},              # 이미 공개된 내용인가
                     "reason": {"type": "string"},                        # 판정 근거 한 문장
                 },
                 "required": [
@@ -88,9 +88,10 @@ SYSTEM = """당신은 한국 기업의 내부 기술 보고자료를 읽고 특�
 - B : 수단이 문장에 없으나 존재가 강하게 시사된다. 발명자 인터뷰로 내용을 캐내야 하는 후보. **위 원칙에 해당하는 표현은 최소 B 를 준다.**
 - C : 배경·시장·일정·조직 등 기술적 실질이 없는 서술.
 
-## 공개 리스크
+## 공개 관련정보
 전시·시연, 논문·학회 발표, 보도자료, 고객사 제안서 제출, 양산·출시처럼 기술이 외부에 드러났거나 드러날 예정임을 뜻하는 문장은
-disclosure_risk 를 true 로 둔다. 등급과는 별개 축이며, 출원 기한 관리 대상이다.
+disclosure_risk 를 true 로 둔다. 이렇게 표시된 구간은 결과에서 C(공개 관련정보) 로 안내되며,
+공개 전에 출원을 끝냈어야 하는 대상이다.
 
 ## 마킹하지 않을 것 (중요)
 아래는 숫자가 붙어 있어도 기술적 실질이 없으므로 반환하지 마라. 억지로 "기술이 있음을 시사한다"고 해석하지 마라.
@@ -135,7 +136,7 @@ class Finding:
     grade: str                       # A | B | C
     category: str
     implicit: bool                   # 묵시적 표현인가
-    disclosure_risk: bool            # 공개 리스크인가
+    disclosure_risk: bool            # 이미 공개된 내용인가
     reason: str
     source: str = "llm"              # llm | lexicon
     span: tuple[int, int] | None = None      # merge.py 가 채움: 원문 안의 (시작, 끝)

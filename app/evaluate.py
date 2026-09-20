@@ -21,7 +21,7 @@ evaluate.py ─ 성능 측정 (최초 설정 vs 현재 설정, 같은 문제지�
   - 재현율(recall)    : 잡아야 할 것 중 실제로 잡은 비율. 높을수록 "누락이 없다".
   - 정밀도(precision) : 잡은 것 중 진짜였던 비율.       높을수록 "헛짚지 않는다".
   - F1                : 위 둘의 조화 평균. 종합 점수 하나가 필요할 때 사용.
-  - 등급 일치율       : 맞게 잡은 것 중 등급(A/B·⚠공개)까지 맞힌 비율.
+  - 등급 일치율       : 맞게 잡은 것 중 등급(A/B/C)까지 맞힌 비율.
 
 [시간에 대하여]
   문단 묶음마다 모델을 두 번(최초·현재) 부르므로 문제지가 크면 몇 분 걸립니다.
@@ -138,8 +138,7 @@ def _run_variant(paras: list[dict], model: str, system: str,
 
     # 실제 파이프라인과 같은 병합·안전망·오탐 필터를 통과시킨다
     deck = SimpleNamespace(segments=segs)
-    resolved, _marks = merge.resolve(deck, findings, hits_by_seg,
-                                     include_grade_c=False)
+    resolved, _marks = merge.resolve(deck, findings, hits_by_seg)
     preds: dict[str, list[dict]] = {}
     for f in resolved:
         text = segs[f.seg_id - 1].text

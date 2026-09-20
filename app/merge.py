@@ -99,8 +99,7 @@ class Mark:
 
 
 def resolve(deck: Deck, findings: list[Finding],
-            hits_by_seg: dict[int, list[lexicon.Hit]],
-            include_grade_c: bool = False) -> tuple[list[Finding], list[Mark]]:
+            hits_by_seg: dict[int, list[lexicon.Hit]]) -> tuple[list[Finding], list[Mark]]:
     """이 파일의 진입점. (최종 Finding 목록, Mark 목록) 을 돌려준다."""
     seg_map: dict[int, Segment] = {s.seg_id: s for s in deck.segments}
 
@@ -170,9 +169,9 @@ def resolve(deck: Deck, findings: list[Finding],
                         f.disclosure_risk = True
                         break
 
-    # C 등급은 기본적으로 숨긴다 (공개 리스크가 붙은 것은 남김)
-    if not include_grade_c:
-        resolved = [f for f in resolved if f.grade != "C" or f.disclosure_risk]
+    # 모델이 스스로 매긴 C(배경·참고 수준)는 출원 후보가 아니므로 결과에서 뺀다.
+    # 단 공개 신호가 붙었으면 남긴다 — 그 구간은 C(공개 관련정보)로 표시된다.
+    resolved = [f for f in resolved if f.grade != "C" or f.disclosure_risk]
 
     # 슬라이드 → 문단 → 위치 순으로 정렬
     resolved.sort(key=lambda f: (f.slide_no, f.seg_id,

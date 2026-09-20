@@ -22,15 +22,16 @@ review.py ─ 검토완료본을 읽어 "사람의 교정" 을 학습 재료로 
                           개선 타임라인에서 측정 결과와 함께 계속 볼 수 있습니다.
 
 [검토자의 형광펜 색 규약]
-  노랑 계열 = A (구체 수단 드러남) · 하늘/파랑 계열 = B (묵시) · 살구/빨강 계열 = ⚠ 공개 리스크
+  노랑 계열 = A (구체 수단 드러남) · 하늘/파랑 계열 = B (묵시) · 살구/빨강 계열 = C (공개 관련정보)
   PowerPoint 기본 형광펜 색을 써도 됩니다 — 정확한 색이 아니라 색 계열(색상환 거리)로 판정합니다.
   형광펜을 지우면 "후보 아님", 색을 바꾸면 "등급 정정" 입니다.
 
 [짝 맞추기의 원리]
   검토본은 마킹본을 고친 것이라 글자 내용은 원본과 같습니다. 그래서 문단 글자를
   이어붙여 만든 지문(fingerprint)으로 "어느 분석 기록과 비교할지" 를 찾습니다.
-  범례 상자·배지·요약 슬라이드와 (옵션으로 붙인) 【출원검토필요】 문구는 도구가 넣은
-  것이므로 빼고 비교합니다. 예전 버전의 【특허검토필요】 문구도 같은 방식으로 뺍니다.
+  범례 상자와 (옵션으로 붙인) 【출원검토필요】 문구는 도구가 넣은 것이므로 빼고 비교합니다.
+  예전 버전이 붙이던 배지·요약 슬라이드·【특허검토필요】 문구도 같은 방식으로 뺍니다
+  (지금은 붙이지 않지만, 그때 만든 마킹본을 올려도 읽을 수 있어야 하므로 남겨 둡니다).
 """
 from __future__ import annotations
 
@@ -49,15 +50,16 @@ from pptx.oxml.ns import qn
 from . import config, lexicon
 from .extract import _walk_shapes
 
-# 도구가 넣은 것들을 알아보는 표식. 예전 버전이 만든 마킹본도 읽을 수 있게 옛 표현을 함께 둔다.
-SUMMARY_TITLES = ("출원 검토 마킹 요약", "특허 검토 마킹 요약")     # mark.append_summary 제목
+# 도구가 넣은 것들을 알아보는 표식.
+# 지금 붙이는 것은 범례 상자뿐이지만, 예전 버전이 만든 마킹본(배지·요약 슬라이드가 있는
+# 파일)을 올려도 그대로 읽히도록 옛 표식을 함께 둔다.
+SUMMARY_TITLES = ("출원 검토 마킹 요약", "특허 검토 마킹 요약")     # 예전 요약 슬라이드 제목
 TOOL_SHAPE_NAMES = frozenset(
-    (config.BADGE_NAME, config.LEGEND_NAME, *config.LEGACY_BADGE_NAMES)
-)                                                                     # 배지·범례 도형 이름
+    (config.LEGEND_NAME, *config.LEGACY_BADGE_NAMES)
+)                                                                     # 범례·(예전)배지 도형 이름
 TAG_TEXTS = frozenset((config.TAG_TEXT, *config.LEGACY_TAG_TEXTS))    # 구간 뒤 문구
-BADGE_RE = re.compile(
-    "^(?:" + "|".join(re.escape(t) for t in (config.BADGE_TEXT, *config.LEGACY_BADGE_TEXTS))
-    + r")\s*\d+\s*건$"
+BADGE_RE = re.compile(                                                # 예전 배지 글귀 "○○ N건"
+    "^(?:" + "|".join(re.escape(t) for t in config.LEGACY_BADGE_TEXTS) + r")\s*\d+\s*건$"
 )
 
 # 색 계열 → 등급 판정용 기준 색상각(hue). GRADE_COLOR 에서 유도한 값.
@@ -175,7 +177,7 @@ def load_archive(fp: str) -> dict | None:
 # 3. 검토완료본 읽기 ─ 형광펜 색과 위치를 꺼낸다
 # ═════════════════════════════════════════════════════════════════
 def color_to_grade(hexv: str) -> tuple[str, bool]:
-    """형광펜 색 → (등급, 공개리스크). 색 계열(hue)이 가장 가까운 기준을 따른다."""
+    """형광펜 색 → (등급, 공개 관련정보인가). 색 계열(hue)이 가장 가까운 기준을 따른다."""
     try:
         r, g, b = (int(hexv[i:i + 2], 16) / 255 for i in (0, 2, 4))
     except (ValueError, TypeError):
@@ -187,7 +189,7 @@ def color_to_grade(hexv: str) -> tuple[str, bool]:
     best = min(_HUE_ANCHOR, key=lambda k: min(abs(hue - _HUE_ANCHOR[k]),
                                               360 - abs(hue - _HUE_ANCHOR[k])))
     if best == "R":
-        return "B", True               # 리스크 색 = 등급 B + 공개 리스크 표시
+        return "B", True               # 살구/빨강 = C(공개 관련정보) 색
     return best, False
 
 
@@ -249,11 +251,11 @@ def read_reviewed(path: str) -> dict:
     texts_for_fp: list[str] = []
 
     for s_idx, slide in enumerate(prs.slides, 1):
-        # 요약 슬라이드(도구가 붙인 것)는 통째로 건너뛴다
+        # 예전 버전이 붙이던 요약 슬라이드는 통째로 건너뛴다 (지금은 붙이지 않음)
         slide_paras: list[tuple] = []
         is_summary = False
         for shp, _pid in _walk_shapes(slide.shapes):
-            if getattr(shp, "name", "") in TOOL_SHAPE_NAMES:    # 배지·범례 상자
+            if getattr(shp, "name", "") in TOOL_SHAPE_NAMES:    # 범례 상자·(예전)배지
                 continue
             if getattr(shp, "has_chart", False) and shp.has_chart:
                 continue
@@ -732,7 +734,7 @@ def examples_block() -> str:
         lines += [f'- "{e["quote"]}"' for e in excl]
     if incl:
         lines.append("다음과 같은 구간은 검토 결과 후보가 맞았다. 유사한 표현을 놓치지 마라.")
-        lines += [f'- [{e["grade"]}{"·⚠공개" if e.get("risk") else ""}] "{e["quote"]}"'
+        lines += [f'- [{e["grade"]}{"·C공개" if e.get("risk") else ""}] "{e["quote"]}"'
                   for e in incl]
     block = "\n".join(lines)
     _EX_CACHE = (mtime, block)

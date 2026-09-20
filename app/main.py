@@ -134,9 +134,7 @@ def _run(job: Job, opts: config.RunOptions) -> None:
 
         # ── 4단계: 규칙 결과와 모델 결과 병합, 등급 확정 ──────
         job.stage = "결과 병합 및 등급 산정"
-        resolved, marks = merge.resolve(
-            deck, all_findings, hits_by_seg, include_grade_c=opts.include_grade_c
-        )
+        resolved, marks = merge.resolve(deck, all_findings, hits_by_seg)
         job.findings = [f.to_public() for f in resolved]
 
         # 판정 기록을 자동 저장해 둔다 — [검토 반영] 탭이 검토완료본과 비교할 기준.
@@ -148,8 +146,7 @@ def _run(job: Job, opts: config.RunOptions) -> None:
 
         # ── 5단계: PPTX 에 마킹하고 저장 ──────────────────────
         job.stage = "PPTX 마킹 중"
-        stats = mark.apply(deck, resolved, marks,
-                           add_summary=opts.add_summary, tag_marks=opts.tag_marks)
+        stats = mark.apply(deck, resolved, marks, tag_marks=opts.tag_marks)
         deck.prs.save(str(job.out))
 
         # ── 집계 ──────────────────────────────────────────────
@@ -203,9 +200,7 @@ async def create_job(
     file: UploadFile,
     model: str = Form(config.MODEL),
     think: bool = Form(False),
-    include_grade_c: bool = Form(False),
     scan_all: bool = Form(True),
-    add_summary: bool = Form(True),
     tag_marks: bool = Form(False),
 ) -> JSONResponse:
     """파일 업로드를 받아 임시 폴더에 저장하고, 분석 스레드를 시작한다."""
@@ -231,8 +226,6 @@ async def create_job(
         model=model or config.MODEL,
         think=think,
         scan_all_paragraphs=scan_all,
-        include_grade_c=include_grade_c,
-        add_summary=add_summary,
         tag_marks=tag_marks,
     )
     # daemon=True : 서버를 끄면 분석 스레드도 같이 종료
