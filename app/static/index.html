@@ -6,23 +6,33 @@
     1. <style>  : 화면 모양(색·간격). CSS.
     2. <body>   : 화면에 놓이는 요소들. HTML.
          #health   상단 상태줄  (Ollama·모델 준비 여부)
-         #setup    파일 올리기 + 옵션 체크박스 + '분석 시작'
+         #setup    파일 고르기(네 가지 방법) + 옵션 체크박스 + '분석 시작'
          #progress 진행률 막대
-         #result   결과 카드·필터·후보 목록·내려받기
+         #result   결과 카드·필터·후보 목록·폴더 열기·내려받기
     3. <script> : 동작. JavaScript.
          health()  → /api/health 호출해 상태줄 갱신
-         #go 클릭  → /api/jobs 에 파일 업로드, 0.9초마다 poll() 로 진행 상황 확인
+         #go 클릭  → /api/jobs(업로드) 또는 /api/local/jobs(경로) 로 분석 시작, 0.9초마다 poll()
          render()  → 결과를 카드와 목록으로 그리기
+
+  [파일을 넣는 네 가지 방법]  (회사 PC 는 브라우저 업로드가 막혀 있을 수 있어 ①~③ 을 둔다)
+    ① input 폴더에 복사 → 목록에서 클릭     ② 경로 붙여넣기     ③ [찾기…] (프로그램이 여는 파일 창)
+    ④ 브라우저로 올리기 (예전 방식)
+    ①~③ 은 서버(main.py)가 파일을 디스크에서 직접 읽는다. 화면 토큰(X-PM-Token)이 있어야 부를 수 있다.
 
   [오프라인 보장]
     외부 CDN·웹폰트·이미지 요청이 전혀 없습니다. CSS/JS 전부 이 파일 안에 있습니다.
 
   [서버(main.py)와 주고받는 주소]
-    GET  /api/health              상태
-    POST /api/jobs                업로드·분석 시작  → {job_id}
-    GET  /api/jobs/{id}           진행 상황·결과
-    POST /api/jobs/{id}/cancel    중단
-    GET  /api/jobs/{id}/download  결과 파일
+    GET  /api/health                  상태
+    POST /api/jobs                    업로드·분석 시작  → {job_id}
+    POST /api/local/jobs              경로로 분석 시작  → {job_id}
+    GET  /api/jobs/{id}               진행 상황·결과 (out_path = output 폴더의 결과 파일)
+    POST /api/jobs/{id}/cancel        중단
+    GET  /api/jobs/{id}/download      결과 파일 내려받기
+    GET  /api/local/files             input·output 폴더 목록
+    POST /api/local/pick              파일 선택창
+    POST /api/local/open              탐색기로 폴더 열기
+    POST /api/local/review/preview    경로로 검토완료본 읽기
 -->
 <html lang="ko">
 <head>
@@ -104,12 +114,40 @@
   code{background:rgba(127,127,127,.14);padding:2px 6px;border-radius:5px;
     font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 
-  /* ── 파일 놓는 영역 ──────────────────────────────────────── */
-  #drop,#rdrop{border:2px dashed var(--line);border-radius:12px;padding:34px 20px;
+  /* ── 파일 고르기 (네 가지 방법) ──────────────────────────── */
+  .srchead{font-weight:700;font-size:15px;margin-bottom:12px}
+  .srchead .stage{font-weight:500;margin-left:6px}
+  .srcgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:760px){.srcgrid{grid-template-columns:1fr}}
+  .srcgrid>*{min-width:0}
+  .srcbox{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--bg)}
+  .srctitle{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;margin-bottom:8px}
+  .srcbtns{margin-left:auto;display:flex;gap:6px}
+  .srcnote{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
+  .srcbox input[type=text],.srcbox textarea{background:var(--panel)}
+  .srcbox input[type=text]{flex:1;min-width:140px}
+  .flist{max-height:210px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+  .fitem{display:flex;gap:10px;align-items:baseline;padding:7px 10px;cursor:pointer;
+    font-size:13.5px;border-bottom:1px solid var(--line);user-select:none}
+  .fitem:last-child{border-bottom:0}
+  .fitem:hover{background:rgba(127,127,127,.08)}
+  .fitem.on{background:rgba(45,212,191,.16);box-shadow:inset 3px 0 0 var(--accent)}
+  .fitem .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fitem .fm{margin-left:auto;color:var(--muted);font-size:11.5px;white-space:nowrap}
+  .fgroup{padding:5px 10px;font-size:11.5px;color:var(--muted);font-weight:600;
+    background:rgba(127,127,127,.07);border-bottom:1px solid var(--line)}
+  .picked{margin-top:14px;padding:10px 14px;border-radius:9px;background:rgba(45,212,191,.10);font-size:13.5px}
+  .picked.none{background:transparent;color:var(--muted);border:1px dashed var(--line)}
+  .picked.err{background:rgba(232,102,60,.12);color:var(--risk)}
+  textarea{width:100%;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+    padding:7px 10px;font:inherit;font-size:13px;resize:vertical}
+
+  /* ── 파일 놓는 영역 (④ 브라우저 업로드) ─────────────────── */
+  #drop,#rdrop{border:2px dashed var(--line);border-radius:10px;padding:14px 12px;margin-top:12px;
     text-align:center;cursor:pointer;transition:.15s;background:var(--panel)}
   #drop:hover,#drop.over,#rdrop:hover,#rdrop.over{border-color:var(--accent);background:rgba(45,212,191,.06)}
-  #drop b,#rdrop b{display:block;font-size:15.5px;margin-bottom:4px}
-  #drop span,#rdrop span{color:var(--muted);font-size:13px}
+  #drop b,#rdrop b{display:block;font-size:13.5px;margin-bottom:2px}
+  #drop span,#rdrop span{color:var(--muted);font-size:12px}
   input[type=file]{display:none}
 
   label.opt{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;
@@ -120,6 +158,7 @@
     padding:11px 20px;font:inherit;font-weight:600;cursor:pointer}
   button:disabled{opacity:.45;cursor:default}
   button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:500}
+  button.sm{padding:6px 11px;font-size:12.5px;border-radius:7px}
 
   /* ── 진행률 ─────────────────────────────────────────────── */
   #bar{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin:14px 0 8px}
@@ -131,6 +170,8 @@
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
   .card b{display:block;font-size:24px;line-height:1.2}
   .card span{font-size:12px;color:var(--muted)}
+  .outinfo{font-size:13px;margin:-6px 0 18px;color:var(--muted);word-break:break-all}
+  .outinfo code{font-size:12px}
 
   .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   .chip{border:1px solid var(--line);background:var(--panel);color:var(--muted);
@@ -150,6 +191,7 @@
   .find q{display:block;font-size:14.5px;margin:2px 0 5px;quotes:'“' '”'}
   .find p{margin:0;font-size:13px;color:var(--muted)}
   .empty{color:var(--muted);font-size:13.5px;padding:16px 0}
+  .flist .empty{padding:14px 10px;font-size:13px}
   .err{color:var(--risk);font-size:13.5px;white-space:pre-wrap}
   .hide{display:none}
   .note{font-size:12.5px;color:var(--muted);margin-top:14px;line-height:1.7}
@@ -163,7 +205,7 @@
   <!-- 상단 상태줄: health() 가 채움 -->
   <div id="health"><span class="dot" id="hdot"></span><span id="htext">온디바이스 모델 확인 중…</span></div>
 
-  <!-- 탭: 문서 분석 ↔ 검토 반영 -->
+  <!-- 탭: 문서 분석 ↔ 검토 반영 ↔ 성능 기록 -->
   <div class="tabs">
     <button class="tab on" id="tabAnalyze">문서 분석</button>
     <button class="tab" id="tabReview">검토 반영</button>
@@ -171,14 +213,40 @@
   </div>
 
   <div id="viewAnalyze">
-  <!-- 1. 파일 올리기 + 옵션 -->
+  <!-- 1. 파일 고르기 + 옵션 -->
   <div class="panel" id="setup">
-    <div id="drop">
-      <b>PPTX 파일을 여기에 놓거나 클릭해 선택하세요</b>
-      <span>업로드된 파일과 분석 결과는 외부로 전송되지 않습니다</span>
-      <input type="file" id="file" accept=".pptx,.potx">
+    <div class="srchead">분석할 파일 고르기 <span class="stage">— 네 가지 중 편한 방법으로</span></div>
+    <div class="srcgrid">
+      <!-- ① input 폴더 -->
+      <div class="srcbox">
+        <div class="srctitle">① input 폴더에서 고르기
+          <span class="srcbtns">
+            <button class="ghost sm" id="flistRefresh">새로고침</button>
+            <button class="ghost sm" id="openInput">폴더 열기</button>
+          </span></div>
+        <div class="flist" id="flist"><div class="empty">불러오는 중…</div></div>
+        <div class="srcnote">탐색기에서 <code id="inputDir">input</code> 폴더에 PPTX 를 복사해 두면 여기 나타납니다.
+          (목록이 안 바뀌면 [새로고침])</div>
+      </div>
+      <!-- ② 경로 붙여넣기 · ③ 찾기 · ④ 업로드 -->
+      <div class="srcbox">
+        <div class="srctitle">② 경로 붙여넣기 · ③ 찾기</div>
+        <div class="row" style="gap:8px">
+          <input type="text" id="pathIn" placeholder="C:\…\보고서.pptx" spellcheck="false">
+          <button class="ghost sm" id="pathUse">이 파일로</button>
+          <button class="sm" id="pickBtn">찾기…</button>
+        </div>
+        <div class="srcnote" id="pathNote">탐색기에서 파일을 <b>Shift + 우클릭 → "경로로 복사"</b> 한 뒤 붙여넣고 [이 파일로].
+          [찾기…] 는 프로그램이 직접 여는 파일 창이라 브라우저 업로드 차단과 무관합니다.</div>
+        <div id="drop">
+          <b>④ 브라우저로 올리기 — 여기에 놓거나 클릭</b>
+          <span>업로드가 막힌 PC 에서는 ①~③ 을 쓰세요</span>
+          <input type="file" id="file" accept=".pptx,.potx">
+        </div>
+      </div>
     </div>
-    <div class="row" style="margin-top:16px">
+    <div class="picked none" id="picked">아직 고른 파일이 없습니다.</div>
+    <div class="row" style="margin-top:14px">
       <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
       <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
       <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
@@ -199,10 +267,12 @@
   <!-- 3. 결과 -->
   <div id="result" class="hide">
     <div class="cards" id="cards"></div>
-    <div class="row" style="margin-bottom:18px">
-      <button id="dl">마킹된 PPTX 내려받기</button>
+    <div class="row" style="margin-bottom:14px">
+      <button id="openOut">결과 폴더 열기</button>
+      <button class="ghost" id="dl">브라우저로 내려받기</button>
       <button class="ghost" id="again">다른 파일 분석</button>
     </div>
+    <div class="outinfo" id="outinfo"></div>
     <div class="filters" id="filters"></div>
     <div id="list"></div>
     <p class="note">
@@ -216,14 +286,38 @@
   <!-- ═══════════ 검토 반영 탭 ═══════════ -->
   <div id="viewReview" class="hide">
     <div class="panel">
-      <div id="rdrop">
-        <b>검토완료 PPTX 를 여기에 놓거나 클릭해 선택하세요 (여러 개 한꺼번에 가능)</b>
-        <span>마킹 결과를 사람이 교정한 파일 — 내용은 외부로 전송되지 않습니다</span>
-        <input type="file" id="rfile" accept=".pptx" multiple>
+      <div class="srchead">검토완료 PPTX 고르기 <span class="stage">— 여러 개 한꺼번에 가능</span></div>
+      <div class="srcgrid">
+        <div class="srcbox">
+          <div class="srctitle">① input · output 폴더에서 고르기
+            <span class="srcbtns">
+              <button class="ghost sm" id="rlistRefresh">새로고침</button>
+              <button class="ghost sm" id="ropenInput">폴더 열기</button>
+            </span></div>
+          <div class="flist" id="rflist"><div class="empty">불러오는 중…</div></div>
+          <div class="row" style="margin-top:8px;gap:8px">
+            <button class="sm" id="rlistGo" disabled>선택한 파일 읽기</button>
+            <span class="stage" id="rlistMsg">클릭해서 여러 개 고를 수 있습니다</span>
+          </div>
+        </div>
+        <div class="srcbox">
+          <div class="srctitle">② 경로 붙여넣기 · ③ 찾기</div>
+          <textarea id="rpathIn" rows="3" placeholder="한 줄에 하나씩:&#10;C:\…\보고서_특허마킹.pptx" spellcheck="false"></textarea>
+          <div class="row" style="gap:8px;margin-top:8px">
+            <button class="ghost sm" id="rpathUse">이 파일들 읽기</button>
+            <button class="sm" id="rpickBtn">찾기… (여러 개)</button>
+            <span class="stage" id="rpickMsg"></span>
+          </div>
+          <div id="rdrop">
+            <b>④ 브라우저로 올리기 — 여기에 놓거나 클릭</b>
+            <span>업로드가 막힌 PC 에서는 ①~③ 을 쓰세요</span>
+            <input type="file" id="rfile" accept=".pptx" multiple>
+          </div>
+        </div>
       </div>
       <p class="note" style="margin-bottom:0">
         <b>검토 방법</b> — 마킹된 PPTX 를 PowerPoint 로 열어:
-        잘못 잡은 곳은 <b>형광펜을 지우고</b>, 놓친 곳은 <b>새로 칠하고</b>, 등급이 틀리면 <b>색을 바꿔</b> 저장한 뒤 여기에 올립니다.<br>
+        잘못 잡은 곳은 <b>형광펜을 지우고</b>, 놓친 곳은 <b>새로 칠하고</b>, 등급이 틀리면 <b>색을 바꿔</b> 저장한 뒤 여기에 넣습니다.<br>
         색 규약: <b>노랑 계열 = A</b>(수단이 드러남) · <b>하늘/파랑 계열 = B</b>(묵시) · <b>살구/빨강 계열 = C</b>(공개 관련정보)
         — PowerPoint 기본 형광펜 색을 그대로 써도 됩니다(비슷한 색으로 자동 인식).
       </p>
@@ -301,6 +395,26 @@
 const $ = s => document.querySelector(s);
 let jobId = null, timer = null, findings = [], filter = "ALL";
 
+// HTML 특수문자를 안전하게 표시 (< > & " 가 태그로 해석되지 않도록)
+const esc = s => (s||"").replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// ── 화면 토큰: main.py 가 화면을 내려줄 때 __PM_TOKEN__ 자리에 심어 준다 ──
+// 경로로 파일을 읽는 기능(/api/local/…)은 이 값이 있어야 부를 수 있다.
+const TOKEN = "__PM_TOKEN__";
+const LOCAL_OK = !TOKEN.startsWith("__PM_");     // /static/index.html 로 직접 열면 토큰이 없다
+async function lapi(path, body, method){
+  method = method || (body === undefined ? "GET" : "POST");
+  const headers = {"X-PM-Token": TOKEN};
+  if(body !== undefined) headers["Content-Type"] = "application/json";
+  const r = await fetch(path, {method, headers, body: body === undefined ? undefined : JSON.stringify(body)});
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(j.detail || `실패 (${r.status})`);
+  return j;
+}
+const basename = p => (p || "").split(/[\\/]/).pop();
+const fmtSize = n => n >= 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n/1024)) + " KB";
+
 // ── 상태 확인: Ollama 가 떠 있고 모델이 있는지 ──────────────────
 async function health(){
   try{
@@ -325,7 +439,111 @@ async function health(){
   }
 }
 
-// ── 파일 선택 (클릭 또는 드래그 앤 드롭) ─────────────────────────
+// ═════════════ 파일 고르기 (문서 분석 탭) ═════════════
+// selected = {kind:"upload", file}  또는  {kind:"path", path, name, where}
+let selected = null;
+let dirs = {input_dir:"", output_dir:"", input_files:[], output_files:[], pick_available:true};
+
+function setSelected(sel){
+  selected = sel;
+  const box = $("#picked");
+  if(!sel){
+    box.className = "picked none";
+    box.textContent = LOCAL_OK ? "아직 고른 파일이 없습니다."
+      : "①~③ 을 쓸 수 없는 상태입니다 — 프로그램(검은 창)을 완전히 끄고 run.bat 을 다시 실행한 뒤 Ctrl+F5 를 누르세요. (주소는 http://127.0.0.1:8765/ 이어야 합니다)";
+    $("#go").disabled = true;
+    return;
+  }
+  box.className = "picked";
+  box.innerHTML = `선택됨: <b>${esc(sel.name)}</b> <span class="stage">— ${esc(sel.where)}</span>`;
+  $("#go").disabled = false;
+}
+function showPickError(msg){
+  const box = $("#picked");
+  box.className = "picked err";
+  box.textContent = msg;
+  $("#go").disabled = !selected;
+}
+
+// 폴더 목록 그리기. multi=true 면 여러 개 토글 선택.
+function renderFileList(el, groups, multi, onChange){
+  const total = groups.reduce((a,g) => a + g.files.length, 0);
+  if(!total){
+    el.innerHTML = `<div class="empty">아직 파일이 없습니다. 탐색기에서 폴더에 PPTX 를 복사한 뒤 [새로고침].</div>`;
+    return;
+  }
+  el.innerHTML = groups.map(g => (groups.length > 1 && g.files.length ? `<div class="fgroup">${esc(g.label)}</div>` : "") +
+    g.files.map(f => `<div class="fitem" data-path="${esc(f.path)}" data-name="${esc(f.name)}" data-where="${esc(g.label)}" title="${esc(f.path)}">
+      <span class="fn">${esc(f.name)}</span><span class="fm">${fmtSize(f.size)} · ${esc(f.mtime)}</span></div>`).join("")).join("");
+  el.querySelectorAll(".fitem").forEach(d => d.onclick = () => {
+    if(multi) d.classList.toggle("on");
+    else { el.querySelectorAll(".fitem").forEach(x => x.classList.remove("on")); d.classList.add("on"); }
+    onChange(d);
+  });
+}
+
+// input 폴더 목록 (문서 분석 탭) + input·output 목록 (검토 반영 탭) 을 한 번에 갱신
+async function loadFiles(){
+  if(!LOCAL_OK){
+    $("#flist").innerHTML = `<div class="empty">폴더 목록을 쓸 수 없습니다 — 프로그램(검은 창)을 완전히 끄고 run.bat 을 다시 실행한 뒤 Ctrl+F5 를 누르세요.</div>`;
+    $("#rflist").innerHTML = $("#flist").innerHTML;
+    ["#pickBtn","#pathUse","#openInput","#rpickBtn","#rpathUse","#ropenInput","#rlistGo"].forEach(s => $(s).disabled = true);
+    return;
+  }
+  try{
+    dirs = await lapi("/api/local/files");
+    $("#inputDir").textContent = dirs.input_dir;
+    renderFileList($("#flist"), [{label:"input", files:dirs.input_files}], false, d =>
+      setSelected({kind:"path", path:d.dataset.path, name:d.dataset.name, where:"input 폴더"}));
+    renderFileList($("#rflist"),
+      [{label:"input 폴더", files:dirs.input_files}, {label:"output 폴더", files:dirs.output_files}], true,
+      () => { $("#rlistGo").disabled = !$("#rflist").querySelector(".fitem.on"); });
+    $("#rlistGo").disabled = true;
+    if(!dirs.pick_available){
+      $("#pickBtn").disabled = $("#rpickBtn").disabled = true;
+      $("#pickBtn").title = $("#rpickBtn").title = "이 PC 의 Python 에는 파일 선택창(tkinter)이 없습니다";
+    }
+  }catch(e){
+    $("#flist").innerHTML = `<div class="empty">목록을 불러오지 못했습니다: ${esc(e.message)}</div>`;
+  }
+}
+$("#flistRefresh").onclick = loadFiles;
+$("#rlistRefresh").onclick = loadFiles;
+
+// [폴더 열기] — 탐색기가 막힌 PC 면 경로를 대신 보여 준다
+async function openFolder(which, select, msgEl){
+  try{
+    const j = await lapi("/api/local/open", {which, select: select || null});
+    if(msgEl) msgEl.textContent = `탐색기에서 열었습니다: ${j.path}`;
+  }catch(e){
+    if(msgEl) msgEl.textContent = e.message;
+    else alert(e.message);
+  }
+}
+$("#openInput").onclick = () => openFolder("input");
+$("#ropenInput").onclick = () => openFolder("input");
+
+// ② 경로 붙여넣기
+function usePath(){
+  const p = $("#pathIn").value.trim();
+  if(!p) return;
+  setSelected({kind:"path", path:p, name:basename(p.replace(/^["'“”]+|["'“”]+$/g, "")), where:"경로 입력"});
+}
+$("#pathUse").onclick = usePath;
+$("#pathIn").onkeydown = e => { if(e.key === "Enter") usePath(); };
+
+// ③ 찾기… (파이썬이 여는 파일 창)
+$("#pickBtn").onclick = async () => {
+  const b = $("#pickBtn"), note = $("#pathNote"), keep = note.innerHTML;
+  b.disabled = true; note.textContent = "파일 창이 열렸습니다. (브라우저 뒤에 있으면 작업 표시줄에서 찾으세요)";
+  try{
+    const j = await lapi("/api/local/pick", {multiple:false});
+    if(j.paths.length){ $("#pathIn").value = j.paths[0]; usePath(); }
+  }catch(e){ showPickError(e.message); }
+  finally{ b.disabled = !dirs.pick_available; note.innerHTML = keep; }
+};
+
+// ④ 브라우저로 올리기 (클릭 또는 드래그 앤 드롭)
 const drop = $("#drop"), fileInput = $("#file");
 drop.onclick = () => fileInput.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
@@ -338,30 +556,37 @@ fileInput.onchange = pick;
 function pick(){
   const f = fileInput.files[0];
   if(!f) return;
-  drop.querySelector("b").textContent = f.name;
-  drop.querySelector("span").textContent = (f.size/1048576).toFixed(1) + " MB · 준비됨";
-  $("#go").disabled = false;
+  $("#flist").querySelectorAll(".fitem").forEach(x => x.classList.remove("on"));
+  setSelected({kind:"upload", file:f, name:f.name, where:`브라우저 업로드 · ${fmtSize(f.size)}`});
 }
 
 // ── '분석 시작' : 파일과 옵션을 서버로 보내고 진행 상황 확인 시작 ──
 $("#go").onclick = async () => {
-  const f = fileInput.files[0];
-  if(!f) return;
-  const fd = new FormData();           // 파일 업로드용 묶음
-  fd.append("file", f);
-  fd.append("think", $("#optThink").checked);
-  fd.append("scan_all", $("#optScanAll").checked);
-  fd.append("tag_marks", $("#optTag").checked);
+  if(!selected) return;
+  $("#go").disabled = true;
+  const think = $("#optThink").checked, scan_all = $("#optScanAll").checked, tag_marks = $("#optTag").checked;
+  try{
+    if(selected.kind === "upload"){
+      const fd = new FormData();           // 파일 업로드용 묶음
+      fd.append("file", selected.file);
+      fd.append("think", think); fd.append("scan_all", scan_all); fd.append("tag_marks", tag_marks);
+      let r;
+      try{ r = await fetch("/api/jobs", {method:"POST", body:fd}); }
+      catch(_){ throw new Error("브라우저 업로드가 되지 않습니다 — 이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요."); }
+      const j = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(j.detail || "업로드 실패 (이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요)");
+      jobId = j.job_id;
+    } else {
+      const j = await lapi("/api/local/jobs", {path:selected.path, think, scan_all, tag_marks});
+      jobId = j.job_id;
+    }
+  }catch(e){ showPickError(e.message); return; }   // 시작 전 오류는 그 자리에서 보여 주고 머문다
 
   $("#setup").classList.add("hide");
   $("#progress").classList.remove("hide");
   $("#result").classList.add("hide");
   $("#errbox").classList.add("hide");
-  $("#fname").textContent = f.name;
-
-  const r = await fetch("/api/jobs", {method:"POST", body:fd});
-  if(!r.ok){ fail((await r.json()).detail || "업로드 실패"); return; }
-  jobId = (await r.json()).job_id;
+  $("#fname").textContent = selected.name;
   timer = setInterval(poll, 900);      // 0.9초마다 진행 상황 확인
   poll();
 };
@@ -374,10 +599,9 @@ $("#again").onclick = () => {
   $("#result").classList.add("hide");
   $("#progress").classList.add("hide");
   $("#setup").classList.remove("hide");
-  $("#go").disabled = true;
-  fileInput.value = "";
-  drop.querySelector("b").textContent = "PPTX 파일을 여기에 놓거나 클릭해 선택하세요";
-  drop.querySelector("span").textContent = "업로드된 파일과 분석 결과는 외부로 전송되지 않습니다";
+  fileInput.value = ""; $("#pathIn").value = "";
+  setSelected(null);
+  loadFiles();
 };
 $("#dl").onclick = () => { if(jobId) location.href = `/api/jobs/${jobId}/download`; };
 
@@ -406,6 +630,9 @@ async function poll(){
     clearInterval(timer);
     findings = j.findings;
     render(j.stats);
+    $("#outinfo").innerHTML = `저장됨: <code>${esc(j.out_path)}</code>`;
+    $("#openOut").onclick = () => openFolder("output", j.out_path, $("#outinfo"));
+    $("#openOut").disabled = !LOCAL_OK;
     $("#progress").classList.add("hide");
     $("#result").classList.remove("hide");
   }
@@ -448,9 +675,6 @@ function render(st){
       <p>${esc(f.reason)}</p></div>`;
   }).join("") : `<div class="empty">해당 조건에 맞는 항목이 없습니다.</div>`;
 }
-// HTML 특수문자를 안전하게 표시 (< > & " 가 태그로 해석되지 않도록)
-const esc = s => (s||"").replace(/[&<>"]/g, c =>
-  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 // 화면용 HTML 조각을 '붙여넣을 글자' 로 되돌린다 ([보고용 표 복사] 전용).
 //  1) 이름표 <span>반영</span> → [반영]   2) 나머지 태그 제거
@@ -478,7 +702,7 @@ function showTab(which){
   $("#viewAnalyze").classList.toggle("hide", which !== "a");
   $("#viewReview").classList.toggle("hide", which !== "r");
   $("#viewEval").classList.toggle("hide", which !== "e");
-  if(which === "r") rstats();
+  if(which === "r"){ rstats(); loadFiles(); }
   if(which === "e") ehistory();
 }
 $("#tabAnalyze").onclick = () => showTab("a");
@@ -495,7 +719,18 @@ async function rstats(){
   }catch(e){ $("#rstats").textContent = ""; }
 }
 
-// ── 검토본 업로드 ──
+// ── 검토본 넣기: 결과가 오면 공통으로 renderReview() ──
+function rbegin(){
+  $("#rres").classList.add("hide");
+  $("#rreport").classList.add("hide");
+  $("#rwork").classList.remove("hide");
+}
+function rfailed(msg){
+  $("#rwork").classList.add("hide");
+  alert("검토본을 읽지 못했습니다: " + msg);
+}
+
+// ④ 브라우저 업로드
 const rdrop = $("#rdrop"), rfile = $("#rfile");
 rdrop.onclick = () => rfile.click();
 rdrop.ondragover = e => { e.preventDefault(); rdrop.classList.add("over"); };
@@ -509,22 +744,43 @@ rfile.onchange = rupload;
 async function rupload(){
   const fl = [...rfile.files];
   if(!fl.length) return;
-  $("#rres").classList.add("hide");
-  $("#rreport").classList.add("hide");
-  $("#rwork").classList.remove("hide");
+  rbegin();
   const fd = new FormData();
   fl.forEach(f => fd.append("files", f));      // 여러 개를 한 요청에 담는다
   try{
-    const r = await fetch("/api/review/preview", {method:"POST", body:fd});
+    let r;
+    try{ r = await fetch("/api/review/preview", {method:"POST", body:fd}); }
+    catch(_){ throw new Error("브라우저 업로드가 되지 않습니다"); }
     const j = await r.json();
     if(!r.ok) throw new Error(j.detail || "읽기 실패");
     rdata = j;
     renderReview();
-  }catch(e){
-    $("#rwork").classList.add("hide");
-    alert("검토본을 읽지 못했습니다: " + e.message);
-  }
+  }catch(e){ rfailed(e.message + " (업로드가 막힌 PC 에서는 ①~③ 을 쓰세요)"); }
 }
+
+// ①②③ 경로로 읽기 (서버가 디스크에서 직접 읽는다)
+async function rlocal(paths){
+  paths = paths.filter(p => p && p.trim());
+  if(!paths.length) return;
+  rbegin();
+  try{
+    rdata = await lapi("/api/local/review/preview", {paths});
+    renderReview();
+  }catch(e){ rfailed(e.message); }
+}
+$("#rlistGo").onclick = () =>
+  rlocal([...$("#rflist").querySelectorAll(".fitem.on")].map(d => d.dataset.path));
+$("#rpathUse").onclick = () => rlocal($("#rpathIn").value.split(/\r?\n/));
+$("#rpickBtn").onclick = async () => {
+  const b = $("#rpickBtn"), m = $("#rpickMsg");
+  b.disabled = true; m.textContent = "파일 창이 열렸습니다 (Ctrl 로 여러 개 선택)";
+  try{
+    const j = await lapi("/api/local/pick", {multiple:true});
+    m.textContent = "";
+    if(j.paths.length){ $("#rpathIn").value = j.paths.join("\n"); rlocal(j.paths); }
+  }catch(e){ m.textContent = e.message; }
+  finally{ b.disabled = !dirs.pick_available; }
+};
 
 const RLABEL = {miss:["누락","miss"], fp:["오탐 제거","fp"], regrade:["등급 변경","re"],
                 gold:["확정","B"], match:["일치",""]};
@@ -555,7 +811,7 @@ function renderReview(){
     if(f.error)
       warns.push(`⚠ ${esc(f.filename)} — 읽지 못했습니다 (${esc(f.error)}). 이 파일만 제외합니다.`);
     else if(f.duplicate_of)
-      warns.push(`⚠ ${esc(f.filename)} — ${esc(f.duplicate_of)} 와 같은 문서입니다. 교정이 서로 다를 수 있어 한 번에 한 벌만 반영합니다 (이 파일 제외 — 필요하면 저장 후 따로 올리세요).`);
+      warns.push(`⚠ ${esc(f.filename)} — ${esc(f.duplicate_of)} 와 같은 문서입니다. 교정이 서로 다를 수 있어 한 번에 한 벌만 반영합니다 (이 파일 제외 — 필요하면 저장 후 따로 넣으세요).`);
     else if(!(f.items||[]).length)
       warns.push(`⚠ ${esc(f.filename)} — 형광펜 구간이 없습니다. 검토완료본이 맞는지 확인하세요 (제외).`);
     else if(f.mode === "fallback")
@@ -657,9 +913,10 @@ $("#rsave").onclick = async () => {
   }
 };
 $("#ragain").onclick = () => {
-  rdata = null; rfile.value = "";
+  rdata = null; rfile.value = ""; $("#rpathIn").value = "";
   $("#rres").classList.add("hide");
   $("#rreport").classList.add("hide");
+  loadFiles();
 };
 
 // ═════════════ 성능 기록 탭 ═════════════
@@ -694,7 +951,7 @@ async function ehistory(){
     $("#eset").innerHTML = s.paras
       ? `현재 문제지 — 문단 <b>${s.paras}</b>개 · 확정 정답 <b>${s.golds}</b>구간 · ` +
         `오탐 확인용 문단 ${s.neg_only}개 · 출처 검토파일 ${s.files}개 · 측정 이력 <b>${eEntries.length}</b>회`
-      : `아직 문제지가 없습니다 — 먼저 [검토 반영] 탭에서 검토완료본을 올려 [반영 저장] 을 해 주세요.`;
+      : `아직 문제지가 없습니다 — 먼저 [검토 반영] 탭에서 검토완료본을 넣어 [반영 저장] 을 해 주세요.`;
     $("#erun").disabled = !s.paras;
     renderLatest();
     renderTimeline();
@@ -882,7 +1139,9 @@ $("#ecopy").onclick = async () => {
   setTimeout(() => $("#ecopymsg").textContent = "", 2500);
 };
 
-health();   // 화면이 열리면 바로 상태 확인
+health();        // 화면이 열리면 바로 상태 확인
+setSelected(null);
+loadFiles();     // input 폴더 목록
 </script>
 </body>
 </html>
