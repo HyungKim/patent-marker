@@ -6,6 +6,9 @@ tests/mock_llm.py ─ "가짜 Ollama" 로 모델 연동 경로 전체를 점검 
 
     실행:  python tests/mock_llm.py
            python tests/mock_llm.py samples/회사보고자료_예시.pptx out_mock.pptx
+           python tests/mock_llm.py --serve        ← 가짜 서버만 띄워 두기 (웹 화면·명령행 점검용)
+
+다른 테스트에서:  import mock_llm; mock_llm.start()  → 포트 11599 에 가짜 서버가 뜬다
 """
 from __future__ import annotations
 
@@ -78,54 +81,87 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
 
-srv = HTTPServer(("127.0.0.1", PORT), Handler)
-threading.Thread(target=srv.serve_forever, daemon=True).start()
+_SERVER: HTTPServer | None = None
 
-from app import config  # noqa: E402
 
-config.OLLAMA_HOST = f"http://127.0.0.1:{PORT}"     # 가짜 서버로 향하게
+def start() -> str:
+    """가짜 Ollama 를 백그라운드 스레드로 띄우고 주소를 돌려준다 (이미 떠 있으면 그대로)."""
+    global _SERVER
+    host = f"http://127.0.0.1:{PORT}"
+    if _SERVER is None:
+        try:
+            _SERVER = HTTPServer(("127.0.0.1", PORT), Handler)
+        except OSError:
+            # 다른 창에서 `python tests/mock_llm.py --serve` 로 이미 띄워 둔 경우 — 그대로 쓴다
+            import urllib.request
+            with urllib.request.urlopen(f"{host}/api/tags", timeout=3) as r:
+                if b"qwen3" not in r.read():
+                    raise
+            return host
+        threading.Thread(target=_SERVER.serve_forever, daemon=True).start()
+    return host
 
-from app import analyze, extract, mark, merge  # noqa: E402
 
-analyze.config.OLLAMA_HOST = config.OLLAMA_HOST
+def main() -> None:
+    host = start()
 
-src = sys.argv[1] if len(sys.argv) > 1 else "samples/회사보고자료_예시.pptx"
-dst = sys.argv[2] if len(sys.argv) > 2 else "out_mock.pptx"
+    from app import config
 
-print("health:", analyze.health())
+    config.OLLAMA_HOST = host                       # 가짜 서버로 향하게
 
-deck = extract.extract(src)
-opts = config.RunOptions()
-hits_by_seg, targets = analyze.prescreen(deck, opts)
+    from app import analyze, extract, mark, merge
 
-by_slide: dict[int, list] = {}
-for seg in targets:
-    by_slide.setdefault(seg.slide_no, []).append(seg)
+    analyze.config.OLLAMA_HOST = config.OLLAMA_HOST
 
-all_f = []
-for n in range(1, deck.slide_count + 1):
-    segs = by_slide.get(n, [])
-    if not segs:
-        continue
-    hints = {s.seg_id: sorted({h.category for h in hits_by_seg.get(s.seg_id, [])})
-             for s in segs}
-    hints = {k: v for k, v in hints.items() if v}
-    got = analyze.analyze_slide("테스트", n, deck.slide_count, segs, hints, opts)
-    print(f"  슬라이드 {n}: 모델 응답 {len(got)}건")
-    all_f += got
+    if len(sys.argv) > 1 and sys.argv[1] == "--serve":
+        print(f"가짜 Ollama 대기 중: {host}   (Ctrl+C 로 종료)")
+        print(f"  다른 창에서:  PM_OLLAMA_HOST={host} python -m app.main")
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            return
 
-resolved, marks = merge.resolve(deck, all_f, hits_by_seg)
-located = sum(1 for f in resolved if f.span is not None)
-print(f"\n총 후보 {len(resolved)}건 · 인용구 위치 확정 {located}건 "
-      f"({located / max(len(resolved), 1) * 100:.0f}%) · 하이라이트 {len(marks)}구간")
+    src = sys.argv[1] if len(sys.argv) > 1 else "samples/회사보고자료_예시.pptx"
+    dst = sys.argv[2] if len(sys.argv) > 2 else "out_mock.pptx"
 
-stats = mark.apply(deck, resolved, marks)   # 형광펜 + 첫 슬라이드 범례만
-deck.prs.save(dst)
-print(f"저장: {dst}  {stats}\n")
+    print("health:", analyze.health())
 
-for f in resolved:
-    if f.source != "llm":
-        continue
-    flag = "C" if f.disclosure_risk else " "
-    imp = "묵시" if f.implicit else "명시"
-    print(f"  p{f.slide_no} [{f.grade}]{flag} {imp} {f.category:<14} {f.quote[:38]!r}")
+    deck = extract.extract(src)
+    opts = config.RunOptions()
+    hits_by_seg, targets = analyze.prescreen(deck, opts)
+
+    by_slide: dict[int, list] = {}
+    for seg in targets:
+        by_slide.setdefault(seg.slide_no, []).append(seg)
+
+    all_f = []
+    for n in range(1, deck.slide_count + 1):
+        segs = by_slide.get(n, [])
+        if not segs:
+            continue
+        hints = {s.seg_id: sorted({h.category for h in hits_by_seg.get(s.seg_id, [])})
+                 for s in segs}
+        hints = {k: v for k, v in hints.items() if v}
+        got = analyze.analyze_slide("테스트", n, deck.slide_count, segs, hints, opts)
+        print(f"  슬라이드 {n}: 모델 응답 {len(got)}건")
+        all_f += got
+
+    resolved, marks = merge.resolve(deck, all_f, hits_by_seg)
+    located = sum(1 for f in resolved if f.span is not None)
+    print(f"\n총 후보 {len(resolved)}건 · 인용구 위치 확정 {located}건 "
+          f"({located / max(len(resolved), 1) * 100:.0f}%) · 하이라이트 {len(marks)}구간")
+
+    stats = mark.apply(deck, resolved, marks)   # 형광펜 + 첫 슬라이드 범례만
+    deck.prs.save(dst)
+    print(f"저장: {dst}  {stats}\n")
+
+    for f in resolved:
+        if f.source != "llm":
+            continue
+        flag = "C" if f.disclosure_risk else " "
+        imp = "묵시" if f.implicit else "명시"
+        print(f"  p{f.slide_no} [{f.grade}]{flag} {imp} {f.category:<14} {f.quote[:38]!r}")
+
+
+if __name__ == "__main__":
+    main()
