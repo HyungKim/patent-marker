@@ -119,13 +119,13 @@ located = sum(1 for f in resolved if f.span is not None)
 print(f"\n총 후보 {len(resolved)}건 · 인용구 위치 확정 {located}건 "
       f"({located / max(len(resolved), 1) * 100:.0f}%) · 하이라이트 {len(marks)}구간")
 
-stats = mark.apply(deck, resolved, marks, add_summary=True)   # 기본값: 범례+배지, 문구 없음
+stats = mark.apply(deck, resolved, marks)   # 형광펜 + 첫 슬라이드 범례만
 deck.prs.save(dst)
 print(f"저장: {dst}  {stats}\n")
 
 for f in resolved:
     if f.source != "llm":
         continue
-    flag = "⚠" if f.disclosure_risk else " "
+    flag = "C" if f.disclosure_risk else " "
     imp = "묵시" if f.implicit else "명시"
     print(f"  p{f.slide_no} [{f.grade}]{flag} {imp} {f.category:<14} {f.quote[:38]!r}")

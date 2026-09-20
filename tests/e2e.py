@@ -53,12 +53,12 @@ llm = sum(1 for f in resolved if f.source == "llm")
 print(f"\n후보 {len(resolved)}건 (모델 {llm} · 규칙 안전망 {len(resolved) - llm}) · "
       f"인용구 위치 확정 {located}/{len(resolved)} · 하이라이트 {len(marks)}구간")
 
-stats = mark.apply(deck, resolved, marks, add_summary=True)   # 기본값: 범례+배지, 문구 없음
+stats = mark.apply(deck, resolved, marks)   # 형광펜 + 첫 슬라이드 범례만
 deck.prs.save(dst)
 print(f"저장: {dst}  {stats}  총 {time.time() - t0:.1f}s\n")
 
 for f in resolved:
-    flag = "⚠" if f.disclosure_risk else " "
+    flag = "C" if f.disclosure_risk else " "
     imp = "묵시" if f.implicit else "명시"
     src_ = "M" if f.source == "llm" else "R"
     print(f"p{f.slide_no} [{f.grade}]{flag}{src_} {imp} {f.category:<12} {f.quote[:34]!r}")

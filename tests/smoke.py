@@ -53,10 +53,10 @@ for seg in deck.segments:
 resolved, marks = merge.resolve(deck, fake, hits_by_seg)
 print(f"후보 {len(resolved)}건 · 하이라이트 구간 {len(marks)}개")
 
-stats = mark.apply(deck, resolved, marks, add_summary=True)   # 기본값: 범례+배지, 문구 없음
+stats = mark.apply(deck, resolved, marks)   # 형광펜 + 첫 슬라이드 범례만
 deck.prs.save(dst)
 print(f"저장: {dst}  {stats}")
 
 for f in resolved[:12]:
-    flag = "⚠" if f.disclosure_risk else " "
+    flag = "C" if f.disclosure_risk else " "
     print(f"  p{f.slide_no} [{f.grade}]{flag} {f.category:<12} {f.quote[:44]!r}")

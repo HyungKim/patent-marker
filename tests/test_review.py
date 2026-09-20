@@ -75,15 +75,22 @@ hits = {s.seg_id: lexicon.scan(s.text) for s in deck.segments}
 resolved, marks = merge.resolve(deck, model_findings, hits)
 fp = review.save_archive(deck, resolved)
 # 문구 옵션을 켜서 마킹 — 6절의 '고아 문구로 오탐 추정' 경로까지 검사하기 위해
-st_mark = mark.apply(deck, resolved, marks, add_summary=True, tag_marks=True)
+st_mark = mark.apply(deck, resolved, marks, tag_marks=True)
 marked = WORK / "marked.pptx"
 deck.prs.save(str(marked))
 check("분석 기록 저장", review.load_archive(fp) is not None)
 check("첫 슬라이드에 색상 범례 상자", st_mark["legend"] == 1 and any(
     s.name == config.LEGEND_NAME for s in Presentation(str(marked)).slides[0].shapes))
-check("배지 문구 = 출원검토필요", any(
-    s.name == config.BADGE_NAME and s.text_frame.text.startswith("출원검토필요")
-    for s in Presentation(str(marked)).slides[0].shapes))
+# 원본에 덧붙이는 것은 형광펜과 범례 상자뿐 — 배지·요약 슬라이드·발표자 노트는 붙이지 않는다
+_mp = Presentation(str(marked))
+_names = [s.name for s in _mp.slides[0].shapes]
+check("슬라이드 배지를 붙이지 않는다",
+      not any("배지" in n for n in _names), str(_names))
+check("요약 슬라이드를 붙이지 않는다 (슬라이드 1장 그대로)",
+      len(_mp.slides) == len(Presentation(str(src)).slides), str(len(_mp.slides)))
+check("발표자 노트를 건드리지 않는다",
+      not any(s.has_notes_slide and s.notes_slide.notes_text_frame.text.strip()
+              for s in _mp.slides))
 
 # 기본 옵션(문구 없음)으로도 한 번: 범례의 색 견본이 검토본 형광펜으로 오인되지 않아야 한다
 deck_b = extract.extract(str(src))
@@ -93,7 +100,7 @@ res_b, marks_b = merge.resolve(deck_b, [
     Finding(next(s.seg_id for s in deck_b.segments if s.text == P2), 1, "결재 소요 시간 단축", "B",
             "효과만기재", True, False, "효과만 기재"),
 ], hits)
-st_b = mark.apply(deck_b, res_b, marks_b, add_summary=True)
+st_b = mark.apply(deck_b, res_b, marks_b)
 marked_b = WORK / "marked_default.pptx"
 deck_b.prs.save(str(marked_b))
 rv_b = review.read_reviewed(str(marked_b))
