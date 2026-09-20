@@ -5,3 +5,5 @@ __pycache__/
 out_*.pptx
 offline_bundle/
 review_data/
+input/
+output/
