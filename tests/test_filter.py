@@ -55,5 +55,26 @@ for text, quote, expect in CASES:
     fails += 0 if ok else 1
     print(f"{'PASS' if ok else 'FAIL'}  기대={expect!s:<5} 실제={got!s:<5} {quote[:44]!r}")
 
-print(f"\n{len(CASES) - fails}/{len(CASES)} 통과")
+# ── 특허 행정 상태 문구 (모델이 '공개' 로 오인해 돌려보내던 것) ──
+# (문단 원문, 인용 구간, 행정 상태로 걸러져야 하는가)
+IP_CASES = [
+    ("관련 기술 특허 출원", "관련 기술 특허 출원", True),
+    ("지식재산 검토 미착수", "지식재산 검토 미착수", True),
+    ("슬라이드 3~4의 기술 내용은 현재까지 특허 출원이 이루어지지 않은 상태이며, 일부 내용은 이미 외부에 공개된 이력이 있음.",
+     "현재까지 특허 출원이 이루어지지 않은 상태", True),
+    ("슬라이드 3~4의 기술 내용은 현재까지 특허 출원이 이루어지지 않은 상태이며, 일부 내용은 이미 외부에 공개된 이력이 있음.",
+     "외부에 공개된 이력", False),            # 진짜 공개 서술 — 남겨야 함
+    ("2026년 3분기 InterBattery 부스에서 공개 시연 예정", "InterBattery 부스에서 공개 시연", False),
+    ("IP 담당 부서 신설 및 특허 전략 수립 예정", "특허 전략 수립", True),
+]
+for text, quote, expect in IP_CASES:
+    i = text.find(quote)
+    assert i >= 0, f"인용구가 원문에 없음: {quote!r}"
+    got = lexicon.is_ip_status(text, (i, i + len(quote)))
+    ok = got == expect
+    fails += 0 if ok else 1
+    print(f"{'PASS' if ok else 'FAIL'}  [특허행정] 기대={expect!s:<5} 실제={got!s:<5} {quote[:44]!r}")
+
+total = len(CASES) + len(IP_CASES)
+print(f"\n{total - fails}/{total} 통과")
 sys.exit(1 if fails else 0)

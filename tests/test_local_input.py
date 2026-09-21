@@ -58,6 +58,7 @@ with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
     config.INPUT_DIR = tmp / "input"
     config.OUTPUT_DIR = tmp / "output"
+    config.REVIEW_DIR = tmp / "review_data"        # 실행 기록(run_log.tsv)도 임시 폴더에
     local.ensure_dirs()
     check("ensure_dirs 가 input·output 을 만든다",
           config.INPUT_DIR.is_dir() and config.OUTPUT_DIR.is_dir())
@@ -107,6 +108,29 @@ with tempfile.TemporaryDirectory() as td:
           f"후보 {stats['total']} · 범례 {stats['legend']}")
     check("pipeline.run: 단계 보고 (읽기→…→완료)",
           stages[0] == "문서 읽는 중" and stages[-1] == "완료" and any("슬라이드 1 " in s for s in stages))
+    # ── 3-1. 속도 성적표: 슬라이드 줄 · 집계 · 실행 기록 파일 ────
+    check("슬라이드 성적표 줄 (토큰·토큰/초)",
+          any("분석 완료 ·" in st and "토큰/초" in st for st in stages),
+          next((st for st in stages if "분석 완료 ·" in st), ""))
+    check("집계에 토큰 수·속도·버전", stats["prompt_tokens"] > 0 and stats["output_tokens"] > 0
+          and stats["tokens_per_sec"] > 0 and stats["version"] == config.VERSION and "토큰/초" in stats["speed_text"],
+          stats.get("speed_text", ""))
+    check("모델 호출 수 = 문단이 있는 슬라이드 수", stats["calls"] == 5, f"calls={stats['calls']}")
+    log = config.REVIEW_DIR / "run_log.tsv"
+    lines = log.read_text(encoding="utf-8-sig").splitlines() if log.exists() else []
+    check("run_log.tsv 에 머리글 + 한 줄", len(lines) == 2 and lines[0].startswith("일시\t버전") and SAMPLE.name in lines[1],
+          lines[1][:80] if len(lines) > 1 else "없음")
+    check("run_log.tsv 칸 수 = 머리글 칸 수", len(lines) == 2 and lines[1].count("\t") == lines[0].count("\t"))
+    llm = [f for f in resolved if f.source == "llm"]
+    check("모델 답의 묵시 여부는 분류로 정해진다",
+          llm and all(f.implicit == (f.category in config.IMPLICIT_CATEGORIES) for f in llm), f"llm {len(llm)}건")
+    check("모델 답의 사유가 짧게 들어온다", llm and all(len(f.reason) <= 12 for f in llm))
+    new_item = analyze._norm_item({"i": 3, "q": "x", "g": "B", "c": "효과만기재", "d": True, "r": "근거"})
+    old_item = analyze._norm_item({"seg_id": 3, "quote": "x", "grade": "B", "category": "효과만기재",
+                                   "implicit": False, "disclosure_risk": True, "reason": "근거"})
+    check("답 형식: 새(i·q·g·c·d·r)와 옛(seg_id…) 키를 모두 받는다",
+          new_item == {"seg_id": 3, "quote": "x", "grade": "B", "category": "효과만기재", "disclosure_risk": True, "reason": "근거"}
+          and old_item == {**new_item, "implicit": False})
     ev = threading.Event()
     ev.set()
     try:
@@ -135,7 +159,8 @@ with tempfile.TemporaryDirectory() as td:
           rc == 1 and (src_dir / "현장_특허마킹(2).pptx").exists())
 
     # ── 5. 명령행 (mark.bat 이 부르는 방식 그대로: 별도 프로세스) ──
-    env = {**os.environ, "PM_OLLAMA_HOST": MOCK_HOST, "PM_OUTPUT_DIR": str(config.OUTPUT_DIR)}
+    env = {**os.environ, "PM_OLLAMA_HOST": MOCK_HOST, "PM_OUTPUT_DIR": str(config.OUTPUT_DIR),
+           "PM_REVIEW_DIR": str(config.REVIEW_DIR)}      # 별도 프로세스도 실행 기록을 임시 폴더에
     proc = subprocess.run([sys.executable, "-m", "app.cli", str(here), "--out", str(tmp / "proc_out")],
                           cwd=str(ROOT), env=env, capture_output=True, text=True, encoding="utf-8")
     check("python -m app.cli (별도 프로세스)", proc.returncode == 0 and (tmp / "proc_out" / "현장_특허마킹.pptx").exists(),

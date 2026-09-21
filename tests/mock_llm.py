@@ -27,6 +27,7 @@ PORT = 11599   # 진짜 Ollama(11434) 와 겹치지 않는 포트
 
 # 모델이 실제로 잡아야 하는 유형들을 흉내 낸다.
 # 인용구는 반드시 원문에 그대로 있어야 하므로, 문단 텍스트에서 직접 골라낸다.
+# (네 번째 값 '묵시 여부' 는 도구가 config.IMPLICIT_CATEGORIES 로 정하는 값과 같게 적어 둔 참고용)
 PICKERS = [
     (re.compile(r"자체\s*제작|자사\s*설계|독자"), "B", "독자성주장", True,
      "독자 설계 주장 — 사내에 미공개 구성이 존재함을 시사"),
@@ -70,22 +71,24 @@ class Handler(BaseHTTPRequestHandler):
                 hit = pat.search(text)
                 if not hit:
                     continue
+                # 진짜 모델과 같은 축약 형식(i·q·g·c·d·r). implicit 은 도구가 분류로 정하므로 보내지 않는다.
                 findings.append({
-                    "seg_id": sid, "quote": hit.group(0), "grade": grade,
-                    "category": cat, "implicit": implicit,
-                    "disclosure_risk": cat == "공개이력", "reason": reason,
+                    "i": sid, "q": hit.group(0), "g": grade, "c": cat,
+                    "d": cat == "공개이력", "r": reason[:12],
                 })
                 break
         text = json.dumps({"findings": findings}, ensure_ascii=False)
+        # 진짜 Ollama 가 마지막 조각에 실어 보내는 집계 흉내 (토큰 ≒ 글자 수 / 2, 속도는 고정값)
+        tally = {"prompt_eval_count": len(user) // 2, "prompt_eval_duration": int(0.2e9),
+                 "eval_count": max(1, len(text) // 2), "eval_duration": int(max(1, len(text) // 2) / 20 * 1e9)}
         if body.get("stream"):
             # 진짜 Ollama 처럼 조각(NDJSON)으로 나눠 보낸다 — analyze._chat 의 이어 붙이기 경로를 검사
             cut = max(1, len(text) // 3)
             pieces = [text[i:i + cut] for i in range(0, len(text), cut)]
             self._send_stream([{"message": {"role": "assistant", "content": pc}, "done": False} for pc in pieces]
-                              + [{"message": {"role": "assistant", "content": ""}, "done": True,
-                                  "eval_count": len(text)}])
+                              + [{"message": {"role": "assistant", "content": ""}, "done": True, **tally}])
         else:
-            self._send({"message": {"content": text}})
+            self._send({"message": {"content": text}, **tally})
 
     def _send(self, obj):
         raw = json.dumps(obj).encode()
