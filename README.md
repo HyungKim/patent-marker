@@ -16,11 +16,13 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
 
 0. GitHub 에서 받은 경우 **(처음 설치할 때만)**: 초록 **Code → Download ZIP** → `C:\` 에 풀고 폴더명을 `patent_marker` 로 변경.
    (저장소에는 15GB `offline_bundle` 이 없으므로 아래 `setup.bat` 온라인 설치를 사용합니다)
-1. `setup.bat` 더블클릭 ─ 처음 한 번. Python·Ollama·모델(5GB)을 자동 설치합니다. (인터넷 필요)
+1. `setup.bat` 더블클릭 ─ 처음 한 번. Python·Ollama·모델(5GB, + 빠름 모델 2.5GB)을 자동 설치합니다. (인터넷 필요)
    - 인터넷이 없는 PC 라면 `setup_offline.bat` (미리 만든 `offline_bundle/` 필요)
 2. `run.bat` 더블클릭 ─ 브라우저가 열립니다. PPTX 를 `input` 폴더에 복사하면 화면 목록에 나타납니다.
    클릭하고 **분석 시작**. (경로 붙여넣기 · [찾기…] · 브라우저 업로드로도 넣을 수 있습니다 — 아래 "파일을 넣는 네 가지 방법")
    - 기본 모델은 가벼운 qwen3:8b 라 GPU 없는 PC·메모리 16GB 에서도 실용적입니다.
+   - 화면의 **모델: 정밀 / 빠름** — 정밀(qwen3:8b)이 기본. 빠름(qwen3:4b-instruct)은 약 3배 빠르지만 후보를 1/3 덜 잡고
+     A 등급을 못 매기므로 급한 문서의 초벌용입니다 (실측은 `docs/05_개선_이력.md`). 명령행은 `mark.bat` 대신 `python -m app.cli 파일 --fast`.
 3. 끝나면 결과가 `output\이름_특허마킹.pptx` 에 저장되어 있습니다. **결과 폴더 열기** 로 바로 갑니다.
    - 브라우저 없이: PPTX 를 `mark.bat` 아이콘 위에 끌어다 놓으면 원본 옆에 결과가 생깁니다.
 
@@ -105,7 +107,7 @@ setup.*     처음 한 번 설치     run.*   실행(웹 화면)     mark.*   �
 
 | 바꾸고 싶은 것 | 파일 | 항목 |
 |---|---|---|
-| 모델 (나중에 업그레이드할 때) | `app/config.py` | `MODEL = "모델명"` (`ollama pull 모델명` 으로 먼저 받기) |
+| 모델 (나중에 업그레이드할 때) | `app/config.py` | `MODEL = "모델명"` (`ollama pull 모델명` 으로 먼저 받기) · 화면의 정밀/빠름 선택지는 `MODEL_CHOICES` |
 | `출원검토필요` 표현 | `app/config.py` | `LEGEND_TITLE`(범례 제목) · `TAG_TEXT`(선택 문구) |
 | 형광펜 색 | `app/config.py` | `GRADE_COLOR` |
 | 단서 표현 추가 (업종 바뀔 때) | `app/lexicon.py` | `RULES`, `NOISE` |

@@ -16,6 +16,7 @@
 set -u
 cd "$(dirname "$0")"
 MODEL="${PM_MODEL:-qwen3:8b}"
+FAST_MODEL="${PM_FAST_MODEL:-qwen3:4b-instruct}"
 OLLAMA_URL="http://127.0.0.1:11434"
 
 say()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
@@ -110,6 +111,12 @@ if "$OLLAMA" list 2>/dev/null | grep -q "^$MODEL"; then
 else
   "$OLLAMA" pull "$MODEL" || die "모델 다운로드 실패 ─ 인터넷 연결을 확인하세요"
   ok "다운로드 완료"
+fi
+say "5/5-2  빠름 모델 내려받기 ($FAST_MODEL)  ─ 약 2.5GB, 화면의 '빠름' 선택용 (없어도 정밀 모드는 됨)"
+if "$OLLAMA" list 2>/dev/null | grep -q "^$FAST_MODEL"; then
+  ok "이미 있음"
+else
+  "$OLLAMA" pull "$FAST_MODEL" && ok "다운로드 완료" || echo "   [경고] 빠름 모델 다운로드 실패 ─ 나중에  ollama pull $FAST_MODEL"
 fi
 
 printf '\n\033[1;32m설치가 끝났습니다.  실행:  bash run.sh\033[0m\n\n'

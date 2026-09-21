@@ -11,12 +11,14 @@ REM    2) .venv 가상환경 만들고 라이브러리 설치
 REM    3) Ollama 설치 (없으면 winget)
 REM    4) Ollama 서버 기동
 REM    5) 모델(qwen3:8b) 내려받기  ← 약 5GB. 가장 오래 걸리는 단계
+REM       + 빠름 모델(qwen3:4b-instruct, 약 2.5GB) — 화면의 "빠름" 선택용. 실패해도 설치는 끝납니다
 REM
 REM  사용법     이 파일을 더블클릭  (또는 터미널에서  setup.bat)
 REM  모델 변경  set PM_MODEL=모델명  입력 후  setup.bat  (나중에 다른 모델로 업그레이드할 때)
 REM  오프라인   인터넷이 없는 PC 에서는 setup_offline.bat 을 쓰세요.
 REM =============================================================================
 if "%PM_MODEL%"=="" (set "MODEL=qwen3:8b") else (set "MODEL=%PM_MODEL%")
+if "%PM_FAST_MODEL%"=="" (set "FAST_MODEL=qwen3:4b-instruct") else (set "FAST_MODEL=%PM_FAST_MODEL%")
 set "OLLAMA_URL=http://127.0.0.1:11434"
 
 echo.
@@ -117,6 +119,16 @@ echo [5/5] 모델 내려받기 (%MODEL%) - 약 5GB, 수 분 ~ 수십 분
 if errorlevel 1 (
   "%OLLAMA%" pull %MODEL%
   if errorlevel 1 ( echo    [실패] 모델 다운로드 - 인터넷 연결을 확인하세요 & pause & exit /b 1 )
+) else (
+  echo    이미 있음
+)
+
+echo.
+echo [5/5-2] 빠름 모델 내려받기 (%FAST_MODEL%) - 약 2.5GB. 화면의 "빠름" 선택용, 없어도 정밀 모드는 됩니다
+"%OLLAMA%" list 2>nul | findstr /B /C:"%FAST_MODEL%" >nul
+if errorlevel 1 (
+  "%OLLAMA%" pull %FAST_MODEL%
+  if errorlevel 1 ( echo    [경고] 빠름 모델 다운로드 실패 - 나중에  ollama pull %FAST_MODEL%  로 받을 수 있습니다 )
 ) else (
   echo    이미 있음
 )
