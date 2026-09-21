@@ -166,7 +166,8 @@
   #bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
   .stage{font-size:13.5px;color:var(--muted)}
   .plog{font:12px/1.7 ui-monospace,Consolas,monospace;color:var(--muted);background:var(--panel2,transparent);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:10px 0 0;max-height:150px;overflow:auto;white-space:pre-wrap}
-  .speed{font-size:12.5px;color:var(--muted);margin:-6px 0 14px}
+  .speed{font-size:12.5px;color:var(--muted);margin:-6px 0 14px;white-space:pre-line}
+  .tag.M{background:#e8f5e9;color:#1b5e20;border-color:#a5d6a7}
   #optModel{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:inherit}
   .mnote{font-size:12px;color:var(--muted);max-width:520px}
   #modelWrap{flex-wrap:wrap}
@@ -257,6 +258,10 @@
       <!-- 모델 선택: health() 가 /api/health 의 choices 로 채운다. 내려받지 않은 모델은 고를 수 없게 막는다 -->
       <label class="opt" id="modelWrap" title="정밀 = 후보를 빠짐없이(기본). 빠름 = 약 3배 빠르지만 후보를 1/3 덜 잡고 A 등급이 없음 — 급한 문서의 초벌용">
         <span style="white-space:nowrap">모델</span> <select id="optModel"></select><span class="mnote" id="modelNote"></span></label>
+      <label class="opt" id="learnWrap" title="검토 반영으로 쌓인 교정을 분석에 되살립니다: 같은 문단은 사람 판정 그대로(문단 기억), 지운 표현은 제외, 추가한 표현은 자동 규칙, 비슷한 확정 사례를 모델에게 보여 줌">
+        <input type="checkbox" id="optLearn" checked> 검토 학습 적용<span class="mnote" id="learnNote"></span></label>
+      <label class="opt" id="embedWrap" title="유사 사례를 글자 겹침이 아니라 '뜻' 으로 찾습니다 (bge-m3 임베딩 모델, 약 1.2GB). 없으면 자동으로 글자 겹침">
+        <input type="checkbox" id="optEmbed" checked> 뜻 기준 검색 (bge-m3)<span class="mnote" id="embedNote"></span></label>
       <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
       <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
       <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
@@ -444,6 +449,19 @@ function fillModels(choices){
 }
 const chosenModel = () => $("#optModel").value || "";
 
+// ── 검토 학습 스위치: 쌓인 기억 크기와 bge-m3 설치 여부를 보여 주고, 없으면 뜻 기준 검색은 잠근다 ──
+function fillLearn(l){
+  const n = (l.paras || 0) + (l.rules || 0) + (l.excludes || 0);
+  $("#learnNote").textContent = l.enabled === false ? "(환경 변수 PM_LEARN=0 으로 꺼짐)"
+    : n ? `기억 문단 ${l.paras} · 자동 규칙 ${l.rules} · 제외 ${l.excludes} · 사례 ${l.examples}`
+        : "아직 쌓인 검토 데이터 없음 — [검토 반영] 에서 검토완료본을 올리면 채워집니다";
+  if(l.enabled === false){ $("#optLearn").checked = false; $("#optLearn").disabled = true; }
+  const ok = !!l.embed_installed;
+  $("#optEmbed").disabled = !ok;
+  $("#optEmbed").checked = ok && l.embed_default !== false;
+  $("#embedNote").textContent = ok ? "설치됨" : `미설치 — 글자 겹침으로 동작. 켜려면 검은 창에서  ollama pull ${l.embed_model || "bge-m3"}`;
+}
+
 // ── 상태 확인: Ollama 가 떠 있고 모델이 있는지 ──────────────────
 async function health(){
   try{
@@ -461,6 +479,7 @@ async function health(){
     $("#hdot").className = "dot ok";
     $("#htext").innerHTML = `온디바이스 모델 <code>${h.model}</code> 준비됨 · 오프라인 동작`;
     fillModels(h.choices || []);
+    fillLearn(h.learn || {});
     return true;
   }catch(e){
     $("#hdot").className = "dot bad";
@@ -596,12 +615,14 @@ $("#go").onclick = async () => {
   $("#go").disabled = true;
   const think = $("#optThink").checked, scan_all = $("#optScanAll").checked, tag_marks = $("#optTag").checked;
   const model = chosenModel();           // 정밀(8b) / 빠름(4b) — 비어 있으면 서버 기본값
+  const learn = $("#optLearn").checked, learn_embed = $("#optEmbed").checked;
   try{
     if(selected.kind === "upload"){
       const fd = new FormData();           // 파일 업로드용 묶음
       fd.append("file", selected.file);
       if(model) fd.append("model", model);
       fd.append("think", think); fd.append("scan_all", scan_all); fd.append("tag_marks", tag_marks);
+      fd.append("learn", learn); fd.append("learn_embed", learn_embed);
       let r;
       try{ r = await fetch("/api/jobs", {method:"POST", body:fd}); }
       catch(_){ throw new Error("브라우저 업로드가 되지 않습니다 — 이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요."); }
@@ -609,7 +630,7 @@ $("#go").onclick = async () => {
       if(!r.ok) throw new Error(j.detail || "업로드 실패 (이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요)");
       jobId = j.job_id;
     } else {
-      const j = await lapi("/api/local/jobs", {path:selected.path, model, think, scan_all, tag_marks});
+      const j = await lapi("/api/local/jobs", {path:selected.path, model, think, scan_all, tag_marks, learn, learn_embed});
       jobId = j.job_id;
     }
   }catch(e){ showPickError(e.message); return; }   // 시작 전 오류는 그 자리에서 보여 주고 머문다
@@ -688,6 +709,7 @@ function render(st){
   // 속도 성적표: 개선 전후 비교의 근거. 같은 내용이 review_data\run_log.tsv 에도 한 줄로 쌓인다.
   $("#speed").textContent = st.speed_text
     ? `이번 실행: ${st.speed_text} · 모델 호출 ${st.calls}회 · 인용구 일치 ${st.quote_located} · ${st.model} · 버전 ${st.version}  (review_data\\run_log.tsv 에 기록됨)`
+      + (st.learn_text ? `\n검토 학습: ${st.learn_text}` : "")
     : "";
 
   const opts = [["ALL","전체"],["A","A 등급"],["B","B 등급"],
@@ -709,6 +731,7 @@ function render(st){
     if(f.disclosure_risk) tags.push(`<span class="tag R">C 공개</span>`);
     if(f.implicit) tags.push(`<span class="tag">묵시</span>`);
     if(f.source === "lexicon") tags.push(`<span class="tag">규칙 사전</span>`);
+    if(f.source === "memory") tags.push(`<span class="tag M">검토 기억</span>`);
     return `<div class="find ${cls}">
       <div class="meta">${tags.join("")}<span>p${f.slide_no}</span><span>·</span>
         <span>${esc(f.category)}</span></div>
