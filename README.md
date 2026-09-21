@@ -5,7 +5,7 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
 
 > **Windows 로 옮겨서 설치하려면 → [docs/00_Windows_따라하기_가이드.md](docs/00_Windows_따라하기_가이드.md) (이 문서대로만 하면 됩니다)**
 > 처음이라면 → [docs/01_프로그램_구조.md](docs/01_프로그램_구조.md) (구조 설명) → [docs/02_설치_및_이전_안내.md](docs/02_설치_및_이전_안내.md) (설치·이전)
-> 검토 결과로 판정을 좋게 만들기 → [docs/03_검토반영_사용법.md](docs/03_검토반영_사용법.md)
+> 검토 결과로 판정을 좋게 만들기 → [docs/03_검토반영_사용법.md](docs/03_검토반영_사용법.md) (검토가 쌓일수록 나아지는 "검토 학습" 은 그 문서의 3-1)
 > 개선 폭을 숫자로 재서 보고하기 → [docs/04_성능_측정.md](docs/04_성능_측정.md)
 > 지금까지 무엇을 왜 바꿨고 얼마나 좋아졌나(보고용) → [docs/05_개선_이력.md](docs/05_개선_이력.md)
 > 발표용 자료 `docs/특허마킹도구_구조설명.pptx` (15장)는 용량 때문에 이 GitHub 저장소에는 넣지 않았습니다 — USB 압축본과 원본 Mac 에만 있습니다.   ·   결과 모양 미리 보기 → [samples/회사보고자료_예시_마킹결과.pptx](samples/회사보고자료_예시_마킹결과.pptx)
@@ -123,6 +123,9 @@ setup.*     처음 한 번 설치     run.*   실행(웹 화면)     mark.*   �
 .venv/bin/python tests/test_eval.py       # 몇 초 · 성능 측정 경로
 .venv/bin/python tests/smoke.py           # 몇 초 · 모델 없이 읽기→마킹
 .venv/bin/python tests/mock_llm.py        # 몇 초 · 가짜 모델로 연동 경로
+.venv/bin/python tests/test_local_input.py # 30초 · 파일 입력 통로·명령행·속도 기록
+.venv/bin/python tests/test_model_call.py # 30초 · 모델 호출: 스트리밍·중단·서버 감지
+.venv/bin/python tests/test_memory.py     # 몇 초 · 검토 학습: 문단 기억·제외/자동 규칙·유사 사례·스위치
 .venv/bin/python tests/e2e.py             # 수 분 · 진짜 모델
 ```
 (Windows 는 `.venv\Scripts\python` 로 바꿔 실행)

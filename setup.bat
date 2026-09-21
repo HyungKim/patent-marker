@@ -12,6 +12,7 @@ REM    3) Ollama 설치 (없으면 winget)
 REM    4) Ollama 서버 기동
 REM    5) 모델(qwen3:8b) 내려받기  ← 약 5GB. 가장 오래 걸리는 단계
 REM       + 빠름 모델(qwen3:4b-instruct, 약 2.5GB) — 화면의 "빠름" 선택용. 실패해도 설치는 끝납니다
+REM       + 뜻 기준 검색 모델(bge-m3, 약 1.2GB) — 검토 학습의 유사 사례를 뜻으로 찾음. 실패해도 설치는 끝납니다
 REM
 REM  사용법     이 파일을 더블클릭  (또는 터미널에서  setup.bat)
 REM  모델 변경  set PM_MODEL=모델명  입력 후  setup.bat  (나중에 다른 모델로 업그레이드할 때)
@@ -19,6 +20,7 @@ REM  오프라인   인터넷이 없는 PC 에서는 setup_offline.bat 을 쓰�
 REM =============================================================================
 if "%PM_MODEL%"=="" (set "MODEL=qwen3:8b") else (set "MODEL=%PM_MODEL%")
 if "%PM_FAST_MODEL%"=="" (set "FAST_MODEL=qwen3:4b-instruct") else (set "FAST_MODEL=%PM_FAST_MODEL%")
+if "%PM_EMBED_MODEL%"=="" (set "EMBED_MODEL=bge-m3") else (set "EMBED_MODEL=%PM_EMBED_MODEL%")
 set "OLLAMA_URL=http://127.0.0.1:11434"
 
 echo.
@@ -129,6 +131,16 @@ echo [5/5-2] 빠름 모델 내려받기 (%FAST_MODEL%) - 약 2.5GB. 화면의 "�
 if errorlevel 1 (
   "%OLLAMA%" pull %FAST_MODEL%
   if errorlevel 1 ( echo    [경고] 빠름 모델 다운로드 실패 - 나중에  ollama pull %FAST_MODEL%  로 받을 수 있습니다 )
+) else (
+  echo    이미 있음
+)
+
+echo.
+echo [5/5-3] 뜻 기준 검색 모델 내려받기 (%EMBED_MODEL%) - 약 1.2GB. 검토 학습의 "뜻 기준 검색" 용, 없어도 글자 겹침으로 동작합니다
+"%OLLAMA%" list 2>nul | findstr /B /C:"%EMBED_MODEL%" >nul
+if errorlevel 1 (
+  "%OLLAMA%" pull %EMBED_MODEL%
+  if errorlevel 1 ( echo    [경고] 다운로드 실패 - 나중에  ollama pull %EMBED_MODEL%  로 받을 수 있습니다 )
 ) else (
   echo    이미 있음
 )
