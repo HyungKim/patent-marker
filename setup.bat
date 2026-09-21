@@ -54,16 +54,16 @@ if not exist ".venv\Scripts\python.exe" (
   %PY% -m venv .venv
   if errorlevel 1 ( echo    [실패] 가상환경 생성 & pause & exit /b 1 )
 )
-".venv\Scripts\python.exe" -m pip install --upgrade pip >nul 2>&1
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
+".venv\Scripts\python.exe" -m pip install --timeout 120 --upgrade pip >nul 2>&1
+".venv\Scripts\python.exe" -m pip install --timeout 120 -r requirements.txt
 if errorlevel 1 (
   REM 회사 PC 는 보안 프로그램이 인터넷 통신을 가로채서 pip 의 인증서 확인이 실패하는 경우가 많다
   REM ^(브라우저는 되는데 pip 만 SSL 오류^). 그때는 pypi 두 주소의 인증서 확인을 건너뛰고 한 번 더 시도한다.
   echo.
   echo    설치가 안 되어 다시 시도합니다 - 회사 보안 프로그램이 통신을 가로채는 PC 이면
   echo    pypi.org 인증서 확인을 건너뛰어야 설치됩니다 ^(--trusted-host^)
-  ".venv\Scripts\python.exe" -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org --upgrade pip >nul 2>&1
-  ".venv\Scripts\python.exe" -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
+  ".venv\Scripts\python.exe" -m pip install --timeout 120 --trusted-host pypi.org --trusted-host files.pythonhosted.org --upgrade pip >nul 2>&1
+  ".venv\Scripts\python.exe" -m pip install --timeout 120 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
   if errorlevel 1 (
     echo.
     echo    [실패] 라이브러리 설치 - 위 오류의 마지막 몇 줄을 적어 두세요.
