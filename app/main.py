@@ -181,8 +181,13 @@ def _start(name: str, src: Path, opts: config.RunOptions,
 
 
 def _options(model: str, think: bool, scan_all: bool, tag_marks: bool) -> config.RunOptions:
-    """화면의 체크박스 값 → RunOptions"""
-    return config.RunOptions(model=model or config.MODEL, think=think,
+    """화면의 체크박스 값 → RunOptions. 고른 모델이 이 PC 에 없으면 시작 전에 알려 준다."""
+    model = model or config.MODEL
+    h = analyze.health()
+    if h.get("ok") and not analyze.model_available(model, h.get("models", [])):
+        raise HTTPException(400, f"모델 {model} 이 이 PC 에 없습니다. 검은 창에서  ollama pull {model}  을 실행하거나 "
+                                 f"화면의 모델 선택을 '정밀' 로 두세요.")
+    return config.RunOptions(model=model, think=think,
                              scan_all_paragraphs=scan_all, tag_marks=tag_marks)
 
 
@@ -206,6 +211,9 @@ def health() -> JSONResponse:
     h["model_ready"] = analyze.model_available(config.MODEL, h.get("models", []))
     h["host"] = config.OLLAMA_HOST
     h["version"] = config.VERSION
+    # 화면의 정밀/빠름 선택지 — 이 PC 에 내려받아진 것만 고를 수 있게 installed 를 같이 준다
+    h["choices"] = [{**c, "installed": analyze.model_available(c["id"], h.get("models", []))}
+                    for c in config.MODEL_CHOICES]
     return JSONResponse(h)
 
 

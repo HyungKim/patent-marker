@@ -363,9 +363,16 @@ def health() -> dict:
 
 
 def model_available(model: str, models: list[str]) -> bool:
-    """원하는 모델이 내려받아져 있는가. 'qwen3' 만 적어도 'qwen3:8b' 와 맞춰 준다."""
-    base = model.split(":")[0]
-    return any(n == model or n.startswith(base + ":") for n in models)
+    """원하는 모델이 내려받아져 있는가.
+
+    태그까지 정확히 맞아야 한다 — 'qwen3:8b' 가 있다고 'qwen3:4b-instruct' 가 있는 것은 아니다
+    (화면의 정밀/빠름 선택이 이 값으로 설치 여부를 표시한다). 태그 없이 'qwen3' 만 적으면 어느 태그든 있으면 된다.
+    """
+    if model in models or model + ":latest" in models:
+        return True
+    if ":" not in model:
+        return any(n.split(":")[0] == model for n in models)
+    return False
 
 
 # ═════════════════════════════════════════════════════════════════

@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # 화면 제목 옆(회색 글씨)·검은 창 첫 줄·mark.bat 출력·오류 메시지 끝에 그대로 나옵니다.
 # "지금 도는 것이 새 버전인가" 를 회사 PC 에서 한눈에 확인하는 용도라, 저장소에 올릴 때마다
 # 올린 날짜로 바꿉니다 (같은 날 두 번째면 뒤에 b, c …). 동작에는 아무 영향이 없습니다.
-VERSION = "2026-09-21c"
+VERSION = "2026-09-21d"
 
 # ─────────────────────────────────────────────────────────────────
 # 1. 온디바이스 LLM (Ollama) 관련
@@ -44,6 +44,16 @@ OLLAMA_HOST = os.environ.get("PM_OLLAMA_HOST", "http://127.0.0.1:11434")
 #   qwen3:8b → 기본. 가볍고 빠름(약 5GB). GPU 없는 PC·메모리 16GB 에서도 실용적
 #   나중에 PC 사양이 좋아져 더 큰 모델로 바꿀 때: ollama pull 모델명 후 아래 값을 바꾸면 끝
 MODEL = os.environ.get("PM_MODEL", "qwen3:8b")
+
+# 화면의 "정밀 / 빠름" 선택. 첫 번째가 기본(MODEL). 2026-09-21 실측(docs/05): 4b 는 약 3배 빠르지만
+# 후보를 1/3 덜 잡고(특히 수치·범위한정) A 등급을 못 매긴다 → 급한 문서의 초벌 용도.
+# setup.bat 이 둘 다 내려받는다(빠름 모델은 약 2.5GB, 없으면 화면에서 고를 수 없게 표시).
+MODEL_CHOICES = [
+    {"id": MODEL, "label": "정밀", "note": "후보를 빠짐없이 · A/B 등급 구분 (기본)"},
+    {"id": os.environ.get("PM_FAST_MODEL", "qwen3:4b-instruct"), "label": "빠름",
+     "note": "약 3배 빠름 · 후보 1/3 감소 · A 등급 없음 — 급한 문서의 초벌용"},
+]
+FAST_MODEL = MODEL_CHOICES[1]["id"]
 
 # Qwen3 의 '생각하기(thinking)' 모드. 켜면 정확도가 조금 오르지만 3~5배 느려집니다.
 # 기본은 끔. 웹 화면의 '추론 모드' 체크박스와 연결되어 있습니다.

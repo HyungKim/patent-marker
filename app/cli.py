@@ -5,6 +5,7 @@ cli.py ─ 브라우저 없이 명령행(또는 mark.bat 끌어다 놓기)으로
     python -m app.cli 보고서.pptx                    → 보고서_특허마킹.pptx (원본 옆)
     python -m app.cli a.pptx b.pptx --out C:\\결과    → 지정한 폴더에 저장
     python -m app.cli 보고서.pptx --tag              → 【출원검토필요】 문구도 표시 (흑백 인쇄용)
+    python -m app.cli 보고서.pptx --fast             → 빠름 모델(qwen3:4b-instruct)로 초벌 — 약 3배 빠름, 후보는 덜 잡힘
 
   Windows 에서는 mark.bat 아이콘 위에 PPTX 를 끌어다 놓으면 이 파일이 실행됩니다.
   Ollama 가 떠 있어야 합니다 (run.bat / mark.bat 이 자동으로 켭니다).
@@ -33,7 +34,12 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--think", action="store_true", help="추론 모드 (정확도↑ 속도↓)")
     ap.add_argument("--no-scan-all", action="store_true", help="규칙 사전에 걸린 문단만 모델에 보냄 (빠름)")
     ap.add_argument("--model", default=config.MODEL, help=f"Ollama 모델 이름 (기본 {config.MODEL})")
-    return ap.parse_args(argv)
+    ap.add_argument("--fast", action="store_true",
+                    help=f"빠름 모델({config.FAST_MODEL}) 사용 — 약 3배 빠르지만 후보를 덜 잡음 (초벌용)")
+    args = ap.parse_args(argv)
+    if args.fast:
+        args.model = config.FAST_MODEL
+    return args
 
 
 def _dest_for(src: Path, out_dir: Path | None) -> tuple[Path, str]:
