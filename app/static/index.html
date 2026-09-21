@@ -165,6 +165,8 @@
   #bar{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin:14px 0 8px}
   #bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
   .stage{font-size:13.5px;color:var(--muted)}
+  .plog{font:12px/1.7 ui-monospace,Consolas,monospace;color:var(--muted);background:var(--panel2,transparent);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:10px 0 0;max-height:150px;overflow:auto;white-space:pre-wrap}
+  .speed{font-size:12.5px;color:var(--muted);margin:-6px 0 14px}
 
   /* ── 결과 ───────────────────────────────────────────────── */
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
@@ -263,12 +265,15 @@
       <button class="ghost" id="cancel">중단</button></div>
     <div id="bar"><i></i></div>
     <div class="stage" id="stage"></div>
+    <!-- 슬라이드별 성적표 (입력/출력 토큰 · 쓰기 토큰/초). 다음 슬라이드가 시작돼도 지워지지 않게 따로 쌓는다 -->
+    <pre class="plog hide" id="plog"></pre>
     <div class="err hide" id="errbox"></div>
   </div>
 
   <!-- 3. 결과 -->
   <div id="result" class="hide">
     <div class="cards" id="cards"></div>
+    <div class="speed" id="speed"></div>
     <div class="row" style="margin-bottom:14px">
       <button id="openOut">결과 폴더 열기</button>
       <button class="ghost" id="dl">브라우저로 내려받기</button>
@@ -625,6 +630,11 @@ async function poll(){
   $("#stage").textContent = j.slide_total
     ? `${j.stage} — ${j.slide_done}/${j.slide_total} 슬라이드 · 후보 ${j.findings.length}건`
     : j.stage;
+  if(j.log && j.log.length){                       // 슬라이드별 성적표 — 이 PC 의 실제 속도
+    $("#plog").textContent = j.log.join("\n");
+    $("#plog").classList.remove("hide");
+    $("#plog").scrollTop = $("#plog").scrollHeight;
+  }
 
   if(j.status === "error"){ fail(j.error); return; }
   if(j.status === "cancelled"){ fail("사용자가 중단했습니다."); return; }
@@ -650,6 +660,10 @@ function render(st){
     [st.implicit ?? 0, "묵시적 표현"],
     [st.disclosure_risk ?? 0, "C 공개 관련정보"],
   ].map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
+  // 속도 성적표: 개선 전후 비교의 근거. 같은 내용이 review_data\run_log.tsv 에도 한 줄로 쌓인다.
+  $("#speed").textContent = st.speed_text
+    ? `이번 실행: ${st.speed_text} · 모델 호출 ${st.calls}회 · 인용구 일치 ${st.quote_located} · ${st.model} · 버전 ${st.version}  (review_data\\run_log.tsv 에 기록됨)`
+    : "";
 
   const opts = [["ALL","전체"],["A","A 등급"],["B","B 등급"],
                 ["IMP","묵시적 표현"],["RISK","C 공개 관련정보"]];
