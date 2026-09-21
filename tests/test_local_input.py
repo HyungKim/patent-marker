@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import json
 import tempfile
 import threading
 import time
@@ -187,6 +188,16 @@ _page = web.index()
 _html = _page.body.decode("utf-8")
 check("화면 제목 옆에 버전이 심어진다", config.VERSION in _html and "__PM_VERSION__" not in _html)
 check("첫 화면은 캐시하지 않는다 (업데이트 뒤 옛 화면 방지)", _page.headers.get("cache-control") == "no-store")
+# ── 정밀/빠름 모델 선택 ──
+check("화면에 모델 선택 상자", 'id="optModel"' in _html and "chosenModel" in _html)
+_h = json.loads(web.health().body)
+_ch = _h.get("choices") or []
+check("상태 응답에 선택지 둘(정밀·빠름)과 설치 여부",
+      [c["label"] for c in _ch] == ["정밀", "빠름"] and _ch[0]["id"] == config.MODEL
+      and _ch[1]["id"] == config.FAST_MODEL and all("installed" in c for c in _ch), str(_ch)[:120])
+check("가짜 Ollama 에는 정밀만 설치됨으로 표시", _ch[0]["installed"] is True and _ch[1]["installed"] is False)
+check("cli --fast 는 빠름 모델", cli._parse(["x.pptx", "--fast"]).model == config.FAST_MODEL
+      and cli._parse(["x.pptx"]).model == config.MODEL)
 
 # ── 7. 파일 선택창 응답 해석 · 열기 명령 ──────────────────────────
 check("선택창 응답: 경로 목록", local._pick_result(0, '["C:\\\\a.pptx", "C:\\\\b.pptx"]\n', "") == ["C:\\a.pptx", "C:\\b.pptx"])
