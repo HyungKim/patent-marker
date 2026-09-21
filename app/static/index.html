@@ -57,6 +57,7 @@
     font:15px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;}
   .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
   h1{font-size:23px;margin:0 0 4px;letter-spacing:-.2px}
+  .ver{font-size:12px;font-weight:400;color:var(--muted);margin-left:6px;vertical-align:middle}
   .sub{color:var(--muted);font-size:13.5px;margin:0 0 24px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
     padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
@@ -199,7 +200,8 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>특허 마킹 도구</h1>
+  <!-- 제목 옆 회색 버전: main.py 가 __PM_VERSION__ 자리에 심는다. 업데이트가 됐는지 확인하는 표시 -->
+  <h1>특허 마킹 도구 <span class="ver" title="도구 버전 — 새 버전으로 바뀌었는지 확인하는 표시">__PM_VERSION__</span></h1>
   <p class="sub">회사 보고자료(PPTX)를 읽어 특허 출원 검토가 필요한 구간을 표시합니다. 문서는 이 컴퓨터를 벗어나지 않습니다.</p>
 
   <!-- 상단 상태줄: health() 가 채움 -->
