@@ -167,6 +167,9 @@
   .stage{font-size:13.5px;color:var(--muted)}
   .plog{font:12px/1.7 ui-monospace,Consolas,monospace;color:var(--muted);background:var(--panel2,transparent);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:10px 0 0;max-height:150px;overflow:auto;white-space:pre-wrap}
   .speed{font-size:12.5px;color:var(--muted);margin:-6px 0 14px}
+  #optModel{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:inherit}
+  .mnote{font-size:12px;color:var(--muted);max-width:520px}
+  #modelWrap{flex-wrap:wrap}
 
   /* ── 결과 ───────────────────────────────────────────────── */
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
@@ -251,6 +254,9 @@
     </div>
     <div class="picked none" id="picked">아직 고른 파일이 없습니다.</div>
     <div class="row" style="margin-top:14px">
+      <!-- 모델 선택: health() 가 /api/health 의 choices 로 채운다. 내려받지 않은 모델은 고를 수 없게 막는다 -->
+      <label class="opt" id="modelWrap" title="정밀 = 후보를 빠짐없이(기본). 빠름 = 약 3배 빠르지만 후보를 1/3 덜 잡고 A 등급이 없음 — 급한 문서의 초벌용">
+        <span style="white-space:nowrap">모델</span> <select id="optModel"></select><span class="mnote" id="modelNote"></span></label>
       <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
       <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
       <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
@@ -422,6 +428,22 @@ async function lapi(path, body, method){
 const basename = p => (p || "").split(/[\\/]/).pop();
 const fmtSize = n => n >= 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n/1024)) + " KB";
 
+// ── 모델 선택 (정밀 / 빠름) ─────────────────────────────────────
+// 서버가 준 선택지 중 이 PC 에 내려받아진 것만 고를 수 있다. 첫 항목(정밀)이 기본.
+function fillModels(choices){
+  const sel = $("#optModel");
+  const keep = sel.value;
+  sel.innerHTML = choices.map(c =>
+    `<option value="${esc(c.id)}" ${c.installed ? "" : "disabled"}>${esc(c.label)} · ${esc(c.id)}${c.installed ? "" : " (미설치)"}</option>`).join("");
+  if(keep && [...sel.options].some(o => o.value === keep && !o.disabled)) sel.value = keep;
+  const cur = choices.find(c => c.id === sel.value) || choices[0];
+  const missing = choices.filter(c => !c.installed).map(c => c.id);
+  $("#modelNote").textContent = (cur ? cur.note : "") +
+    (missing.length ? `  ·  미설치: ${missing.join(", ")} — 검은 창에서  ollama pull ${missing[0]}  (setup.bat 을 다시 실행해도 됩니다)` : "");
+  sel.onchange = () => { const c = choices.find(x => x.id === sel.value); $("#modelNote").textContent = c ? c.note : ""; };
+}
+const chosenModel = () => $("#optModel").value || "";
+
 // ── 상태 확인: Ollama 가 떠 있고 모델이 있는지 ──────────────────
 async function health(){
   try{
@@ -438,6 +460,7 @@ async function health(){
     }
     $("#hdot").className = "dot ok";
     $("#htext").innerHTML = `온디바이스 모델 <code>${h.model}</code> 준비됨 · 오프라인 동작`;
+    fillModels(h.choices || []);
     return true;
   }catch(e){
     $("#hdot").className = "dot bad";
@@ -572,10 +595,12 @@ $("#go").onclick = async () => {
   if(!selected) return;
   $("#go").disabled = true;
   const think = $("#optThink").checked, scan_all = $("#optScanAll").checked, tag_marks = $("#optTag").checked;
+  const model = chosenModel();           // 정밀(8b) / 빠름(4b) — 비어 있으면 서버 기본값
   try{
     if(selected.kind === "upload"){
       const fd = new FormData();           // 파일 업로드용 묶음
       fd.append("file", selected.file);
+      if(model) fd.append("model", model);
       fd.append("think", think); fd.append("scan_all", scan_all); fd.append("tag_marks", tag_marks);
       let r;
       try{ r = await fetch("/api/jobs", {method:"POST", body:fd}); }
@@ -584,7 +609,7 @@ $("#go").onclick = async () => {
       if(!r.ok) throw new Error(j.detail || "업로드 실패 (이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요)");
       jobId = j.job_id;
     } else {
-      const j = await lapi("/api/local/jobs", {path:selected.path, think, scan_all, tag_marks});
+      const j = await lapi("/api/local/jobs", {path:selected.path, model, think, scan_all, tag_marks});
       jobId = j.job_id;
     }
   }catch(e){ showPickError(e.message); return; }   // 시작 전 오류는 그 자리에서 보여 주고 머문다
