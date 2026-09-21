@@ -44,8 +44,19 @@ PICKERS = [
 ]
 
 
+def _fake_vec(text: str, dims: int = 64) -> list[float]:
+    import hashlib
+    t = "".join(text.split()).lower()
+    v = [0.0] * dims
+    for i in range(max(len(t) - 1, 1)):
+        h = int(hashlib.md5(t[i:i + 2].encode("utf-8")).hexdigest(), 16)
+        v[h % dims] += 1.0
+    n = sum(x * x for x in v) ** 0.5 or 1.0
+    return [x / n for x in v]
+
+
 class Handler(BaseHTTPRequestHandler):
-    """Ollama 의 /api/tags, /api/chat 을 흉내 내는 최소 구현."""
+    """Ollama 의 /api/tags, /api/chat, /api/embed 를 흉내 내는 최소 구현."""
 
     protocol_version = "HTTP/1.1"     # 진짜 Ollama 처럼 chunked 스트리밍
     delay = 0.0                       # 테스트용: 답하기 전에 이만큼 기다린다 (느린 PC 흉내)
@@ -54,10 +65,17 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        self._send({"models": [{"name": "qwen3:8b"}, {"name": "qwen3:14b"}]})
+        # bge-m3 도 '설치됨' 으로 답한다 — 검토 학습의 뜻 기준 검색 경로를 시험하기 위해
+        self._send({"models": [{"name": "qwen3:8b"}, {"name": "qwen3:14b"}, {"name": "bge-m3"}]})
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path.rstrip("/").endswith("/api/embed"):
+            # 가짜 임베딩: 글자 두 개 조각을 64칸에 흩뿌린 벡터 — 비슷한 글일수록 비슷한 벡터가 된다
+            inp = body.get("input")
+            texts = [inp] if isinstance(inp, str) else list(inp or [])
+            self._send({"model": body.get("model"), "embeddings": [_fake_vec(t) for t in texts]})
+            return
         if Handler.delay:
             time.sleep(Handler.delay)
         user = body["messages"][-1]["content"]
