@@ -28,10 +28,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import analyze, config, extract, mark, merge, review
+from . import analyze, config, extract, mark, memory, merge, review
 
 RUN_LOG_COLUMNS = ["일시", "버전", "모델", "파일", "슬라이드", "모델호출", "입력토큰", "출력토큰",
-                   "읽기초", "쓰기초", "쓰기토큰/초", "총소요초", "후보", "A", "B", "C", "인용일치", "결과파일"]
+                   "읽기초", "쓰기초", "쓰기토큰/초", "총소요초", "후보", "A", "B", "C", "인용일치", "학습", "결과파일"]
+
+
+def learn_text(lt: dict) -> str:
+    """검토 학습 적용 결과 한 줄. 예: '기억 3문단(+5/−4) · 제외 1 · 사례 12(뜻 기준)'  /  꺼져 있으면 '끔'"""
+    if not lt or not lt.get("on"):
+        return "끔"
+    mode = {"embed": "뜻 기준", "ngram": "글자 겹침", "off": "없음"}.get(lt.get("mode", "off"), "없음")
+    return (f"기억 {lt['memory_paras']}문단(+{lt['memory_added']}/−{lt['memory_dropped']}) · "
+            f"제외 {lt['excluded']} · 확정 표현 구제 {lt.get('rescued', 0)} · 사례 {lt['examples']}({mode})")
 
 
 def speed_text(st: dict) -> str:
@@ -92,6 +101,18 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
             progress(Progress(stage, done, total, findings))
 
     t_run = time.monotonic()
+    # 검토 학습 스위치를 이 스레드에 건다 — 규칙 사전(자동 규칙)·기억·사례 검색이 모두 이 값을 본다
+    memory.set_context(opts.learn)
+    try:
+        return _run(src, dst, opts, report, cancel, t_run)
+    finally:
+        memory.clear_context()
+
+
+def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: float) -> tuple[list, dict]:
+    learn = {"on": bool(opts.learn), "memory_paras": 0, "memory_added": 0, "memory_dropped": 0,
+             "excluded": 0, "rescued": 0, "examples": 0, "mode": "off"}
+    use_embed = bool(opts.learn and opts.learn_embed and memory.embed_available())
 
     # ── 1단계: PPTX 읽기 ──────────────────────────────────────
     report("문서 읽는 중")
@@ -139,10 +160,18 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
                 report(f"슬라이드 {_n} 분석 중 (온디바이스 모델) · {sec // 60}분 {sec % 60:02d}초 경과 · {phase}",
                        _n - 1, total, _snap)
 
+            # ③ 이 슬라이드와 비슷한 확정 사례를 골라 지시서에 붙인다 (학습이 꺼져 있거나 데이터가 없으면 빈 문자열)
+            block, info = memory.examples_for([s.text for s in segs], use_embed=use_embed)
+            system = (analyze.SYSTEM + "\n\n" + block) if block else None
+            learn["examples"] += info["pos"] + info["neg"]
+            if info["mode"] != "off" and block:
+                learn["mode"] = info["mode"]
+
             slide_stats = analyze.new_stats()
             try:
                 all_findings += analyze.analyze_slide(title, slide_no, total, segs, hints, opts,
-                                                      cancel=cancel, progress=alive, stats=slide_stats)
+                                                      cancel=cancel, progress=alive, stats=slide_stats,
+                                                      system=system)
             except analyze.Aborted:
                 raise Cancelled()
             analyze.add_stats(run_stats, slide_stats)
@@ -157,6 +186,25 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
     # ── 4단계: 규칙 결과와 모델 결과 병합, 등급 확정 ──────────
     report("결과 병합 및 등급 산정", total, total)
     resolved, marks = merge.resolve(deck, all_findings, hits_by_seg)
+
+    # ── 4-1단계: 검토 학습 — ① 기억된 문단은 사람 판정으로, ② 지운 표현은 제외 ──
+    if opts.learn:
+        def _mem_finding(seg, quote, span, grade, risk, category, reason):
+            return analyze.Finding(seg_id=seg.seg_id, slide_no=seg.slide_no, quote=quote, grade=grade,
+                                   category=category, implicit=category in config.IMPLICIT_CATEGORIES,
+                                   disclosure_risk=risk, reason=reason, source="memory", span=span)
+        def _rule_finding(seg, quote, span, grade, risk, category, reason):
+            return analyze.Finding(seg_id=seg.seg_id, slide_no=seg.slide_no, quote=quote, grade=grade,
+                                   category=category, implicit=category in config.IMPLICIT_CATEGORIES,
+                                   disclosure_risk=risk, reason=reason, source="lexicon", span=span)
+        resolved, mst = memory.apply_memory(deck, resolved, _mem_finding)
+        resolved, n_ex = memory.apply_excludes(resolved)
+        resolved, n_rs = memory.rescue_confirmed(deck, resolved, hits_by_seg, _rule_finding)
+        learn.update(memory_paras=mst["paras"], memory_added=mst["added"],
+                     memory_dropped=mst["dropped"], excluded=n_ex, rescued=n_rs)
+        if mst["paras"] or n_ex or n_rs:
+            resolved = merge.sort_findings(resolved)
+            marks = merge.build_marks(deck, resolved)
 
     # 판정 기록을 자동 저장해 둔다 — [검토 반영] 탭이 검토완료본과 비교할 기준.
     # 실패해도 분석 자체는 계속한다.
@@ -202,12 +250,15 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
         "tokens_per_sec": round(tps, 1),
         "quote_located": f"{located}/{llm_n}",
         "speed_text": f"{speed_text(run_stats)} · 총 {int(elapsed) // 60}분 {int(elapsed) % 60:02d}초",
+        "learn": learn,
+        "learn_text": learn_text(learn),
     }
     _append_run_log([
         _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), config.VERSION, opts.model, src.name, total,
         run_stats["calls"], run_stats["prompt_tokens"], run_stats["output_tokens"],
         round(run_stats["prompt_sec"], 1), round(run_stats["output_sec"], 1), round(tps, 1),
-        round(elapsed, 1), len(resolved), counts["A"], counts["B"], counts["C"], f"{located}/{llm_n}", dst.name,
+        round(elapsed, 1), len(resolved), counts["A"], counts["B"], counts["C"], f"{located}/{llm_n}",
+        learn_text(learn), dst.name,
     ])
     report("완료", total, total, [f.to_public() for f in resolved])
     return resolved, summary

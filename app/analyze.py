@@ -468,23 +468,26 @@ def analyze_slide(deck_title: str, slide_no: int, total: int,
                   opts: config.RunOptions,
                   cancel: threading.Event | None = None,
                   progress: ProgressFn | None = None,
-                  stats: dict | None = None) -> list[Finding]:
+                  stats: dict | None = None,
+                  system: str | None = None) -> list[Finding]:
     """슬라이드 한 장을 분석한다. pipeline.py 가 슬라이드마다 이 함수를 부른다.
 
     cancel   : '중단' 신호. 켜지면 진행 중인 모델 호출을 끊고 Aborted 를 올린다.
     progress : 지금까지 받은 답변 글자 수를 알리는 콜백 (화면의 "살아 있음" 표시용).
     stats    : new_stats() 로 만든 집계 상자. 넘기면 토큰 수·소요 초가 더해진다 (속도 기록용).
+    system   : 이 슬라이드용 지시서 (검토 학습의 '유사 사례' 블록이 붙은 것). None 이면 공통 지시서.
     """
     if not segs:
         return []
+    sys_prompt = system or _system_prompt()
     # 시스템 프롬프트와 답변 몫을 빼고 남는 만큼만 본문에 쓴다 (한글 1자 ≒ 1토큰 가정)
     # SYSTEM 만이 아니라 뒤에 붙는 '사내 확정 사례' 블록까지 포함한 실제 길이를 뺀다.
     # (블록을 빼지 않으면 예산을 실제보다 크게 잡아 모델 답변 몫이 모자랄 수 있다)
-    budget = max(config.NUM_CTX - len(_system_prompt()) - 1500, 1200)
+    budget = max(config.NUM_CTX - len(sys_prompt) - 1500, 1200)
     out: list[Finding] = []
     for chunk in _batch(segs, budget):
         out += _analyze_batch(deck_title, slide_no, total, chunk, hints, opts,
-                              cancel=cancel, progress=progress, stats=stats)
+                              system_override=system, cancel=cancel, progress=progress, stats=stats)
     return out
 
 

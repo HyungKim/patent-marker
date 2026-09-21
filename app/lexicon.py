@@ -252,7 +252,11 @@ def is_business_noise(text: str, hits: list[Hit],
 # 스캔과 점수
 # ═════════════════════════════════════════════════════════════════
 def scan(text: str) -> list[Hit]:
-    """문단 하나에서 RULES 에 걸리는 모든 구간을 찾아 Hit 목록으로 돌려준다."""
+    """문단 하나에서 RULES 에 걸리는 모든 구간을 찾아 Hit 목록으로 돌려준다.
+
+    끝에 '검토 학습' 의 자동 규칙(memory.auto_hits — 검토에서 추가된 표현의 변형까지)을 붙인다.
+    학습이 꺼져 있거나 데이터가 없으면 아무것도 붙지 않는다.
+    """
     hits: list[Hit] = []
     for rule in RULES:
         for m in rule.pattern.finditer(text):
@@ -262,6 +266,11 @@ def scan(text: str) -> list[Hit]:
                 Hit(rule.rid, rule.category, rule.weight, m.span(), m.group(0),
                     rule.hint, rule.disclosure and rule.category == "공개이력")
             )
+    try:
+        from . import memory                  # 호출 시점에 가져온다 (순환 import 방지)
+        hits += memory.auto_hits(text)
+    except Exception:  # noqa: BLE001  (학습 데이터가 깨져도 규칙 사전 자체는 멈추지 않게)
+        pass
     return hits
 
 

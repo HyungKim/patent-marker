@@ -356,7 +356,7 @@ def diff(reviewed: dict) -> dict:
                 pair = model[pair_i] if pair_i is not None else None
                 base = {"slide": para["slide_no"], "quote": h["quote"],
                         "grade": h["grade"], "risk": h["risk"],
-                        "snippet": _snippet(text, *h["span"]), "text": text[:400]}
+                        "snippet": _snippet(text, *h["span"]), "text": text}
                 if pair is None:
                     covered, cat = _lexicon_probe(text, h["span"])
                     n["miss"] += 1
@@ -384,7 +384,7 @@ def diff(reviewed: dict) -> dict:
                               "quote": f["quote"], "grade": f["grade"],
                               "risk": bool(f["disclosure_risk"]),
                               "category": f.get("category"),
-                              "snippet": _snippet(text, *f["span"]), "text": text[:400]})
+                              "snippet": _snippet(text, *f["span"]), "text": text})
         else:
             # 축소 모드: 확정 라벨 + 고아 태그로 오탐 추정
             for h in human:
@@ -393,7 +393,7 @@ def diff(reviewed: dict) -> dict:
                 items.append({"type": "gold", "slide": para["slide_no"],
                               "quote": h["quote"], "grade": h["grade"], "risk": h["risk"],
                               "category": cat,
-                              "snippet": _snippet(text, *h["span"]), "text": text[:400],
+                              "snippet": _snippet(text, *h["span"]), "text": text,
                               "lexicon_gap": not covered})
             for tpos in para["tags"]:
                 if any(abs(h["span"][1] - tpos) <= 2 for h in human):
@@ -405,7 +405,7 @@ def diff(reviewed: dict) -> dict:
                               "grade": "B", "risk": False,
                               "category": _lexicon_probe(text, span)[1],
                               "snippet": _snippet(text, *span),
-                              "text": text[:400]})
+                              "text": text})
 
     total = sum(n.values())
     agree = round(n["match"] / total * 100) if (mode == "archive" and total) else None

@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # 화면 제목 옆(회색 글씨)·검은 창 첫 줄·mark.bat 출력·오류 메시지 끝에 그대로 나옵니다.
 # "지금 도는 것이 새 버전인가" 를 회사 PC 에서 한눈에 확인하는 용도라, 저장소에 올릴 때마다
 # 올린 날짜로 바꿉니다 (같은 날 두 번째면 뒤에 b, c …). 동작에는 아무 영향이 없습니다.
-VERSION = "2026-09-21d"
+VERSION = "2026-09-22"
 
 # ─────────────────────────────────────────────────────────────────
 # 1. 온디바이스 LLM (Ollama) 관련
@@ -64,6 +64,16 @@ NUM_CTX = int(os.environ.get("PM_NUM_CTX", "8192"))
 
 # 답변의 무작위성. 0 에 가까울수록 매번 같은 답을 냅니다. 분석 용도라 낮게 둡니다.
 TEMPERATURE = float(os.environ.get("PM_TEMPERATURE", "0.1"))
+
+# ── 검토 학습 (app/memory.py) — 검토 데이터가 쌓일수록 나아지게 하는 세 장치의 스위치 ──
+#   LEARN        : 문단 기억 · 제외 사전/자동 규칙 · 유사 사례 검색을 켤지 (화면 "검토 학습 적용", 명령행 --no-learn)
+#   LEARN_EMBED  : 유사 사례를 '뜻' 기준(bge-m3 임베딩)으로 찾을지. 모델이 없으면 자동으로 글자 겹침으로 내려감
+#   EMBED_MODEL  : Ollama 임베딩 모델 이름 (ollama pull bge-m3, 약 1.2GB, 선택 설치)
+#   MEMORY_SIM   : 문단 기억이 "같은 문단" 으로 보는 유사도 문턱 (0~1). 숫자·몇 단어가 바뀐 재사용 장표까지 잡는 값
+LEARN = os.environ.get("PM_LEARN", "1") == "1"
+LEARN_EMBED = os.environ.get("PM_LEARN_EMBED", "1") == "1"
+EMBED_MODEL = os.environ.get("PM_EMBED_MODEL", "bge-m3")
+MEMORY_SIM = float(os.environ.get("PM_MEMORY_SIM", "0.9"))
 
 # 모델이 '아무 응답도 보내지 않는' 상태를 얼마나 참을지(초). 0 = 제한 없음 (기본).
 #   회사 PC(CPU 만, 16GB)에서는 슬라이드 하나에 10분이 넘게 걸릴 수 있어 고정 제한을 없앴습니다.
@@ -198,6 +208,11 @@ class RunOptions:
     # 형광펜 구간 뒤에 【출원검토필요】 문구도 붙일지. 흑백 인쇄용 선택 사항 — 기본은 끔.
     # (색상 안내는 첫 슬라이드의 범례 상자가 맡습니다)        (웹 화면: '문구도 표시')
     tag_marks: bool = False
+
+    # 검토 학습 적용 여부 (문단 기억·제외 사전/자동 규칙·유사 사례 검색) 와 뜻 기준 검색(bge-m3) 사용 여부.
+    # 화면의 체크박스 / 명령행 --no-learn, --no-embed 와 연결. (웹 화면: '검토 학습 적용', '뜻 기준 검색')
+    learn: bool = LEARN
+    learn_embed: bool = LEARN_EMBED
 
     # 이 글자 수보다 짧은 문단은 분석하지 않습니다. (예: "01", "→" 같은 장식 글자)
     min_chars: int = 6

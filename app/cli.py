@@ -36,6 +36,8 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--model", default=config.MODEL, help=f"Ollama 모델 이름 (기본 {config.MODEL})")
     ap.add_argument("--fast", action="store_true",
                     help=f"빠름 모델({config.FAST_MODEL}) 사용 — 약 3배 빠르지만 후보를 덜 잡음 (초벌용)")
+    ap.add_argument("--no-learn", action="store_true", help="검토 학습(문단 기억·제외 사전·유사 사례) 끄기")
+    ap.add_argument("--no-embed", action="store_true", help=f"유사 사례를 뜻 기준({config.EMBED_MODEL})으로 찾지 않고 글자 겹침만")
     args = ap.parse_args(argv)
     if args.fast:
         args.model = config.FAST_MODEL
@@ -85,6 +87,7 @@ def run_one(src: Path, out_dir: Path | None, opts: config.RunOptions) -> Path:
     if stats.get("speed_text"):
         print(f"  속도: {stats['speed_text']} · 모델 호출 {stats.get('calls', 0)}회 · "
               f"인용구 일치 {stats.get('quote_located', '')}  (review_data\\run_log.tsv 에 기록됨)")
+        print(f"  검토 학습: {stats.get('learn_text', '')}")
     print(f"  저장: {dst}")
     return dst
 
@@ -106,7 +109,9 @@ def main(argv: list[str] | None = None) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
 
     opts = config.RunOptions(model=args.model, think=args.think,
-                             scan_all_paragraphs=not args.no_scan_all, tag_marks=args.tag)
+                             scan_all_paragraphs=not args.no_scan_all, tag_marks=args.tag,
+                             learn=config.LEARN and not args.no_learn,
+                             learn_embed=config.LEARN_EMBED and not args.no_embed)
 
     # 먼저 파일들을 전부 확인한다 — 하나가 틀렸다고 나머지까지 못 돌리지 않게, 틀린 것만 알려 준다
     srcs: list[Path] = []

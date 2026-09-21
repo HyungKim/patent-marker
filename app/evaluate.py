@@ -35,7 +35,7 @@ import threading
 import time
 from types import SimpleNamespace
 
-from . import analyze, config, lexicon, merge, review
+from . import analyze, config, lexicon, memory, merge, review
 from .extract import Segment
 
 # "최초 설정" 이 쓰는 모델. 도구의 출하 기본값과 같게 유지합니다.
@@ -108,7 +108,14 @@ def eval_set_summary() -> dict:
 # 2. 한 가지 설정으로 채점 ─ 실제 분석 경로(사전→모델→병합)를 그대로 재현
 # ═════════════════════════════════════════════════════════════════
 def _variant_hits(text: str, base_only: bool) -> list[lexicon.Hit]:
-    """규칙 사전 스캔. 최초 설정은 [사전에 추가] 된 USER_ 규칙을 뺀다."""
+    """규칙 사전 스캔. 최초 설정은 [사전에 추가] 된 USER_ 규칙과 검토 학습(자동 규칙)을 뺀다.
+
+    현재 설정은 학습을 켜되 **이 문단에서 나온 규칙은 뺀다**(leave-one-out) — 외워서 맞히는 점수를 막기 위해.
+    """
+    if base_only:
+        memory.set_context(False)
+    else:
+        memory.set_context(True, exclude_texts={text})
     hits = lexicon.scan(text)
     if base_only:
         hits = [h for h in hits if not h.rid.startswith("USER_")]
@@ -124,6 +131,8 @@ def _run_variant(paras: list[dict], model: str, system: str,
 
     budget = max(config.NUM_CTX - len(system) - 1500, 1200)
     opts = config.RunOptions(model=model, think=False)
+    learn = (not base_only) and config.LEARN
+    use_embed = bool(learn and config.LEARN_EMBED and memory.embed_available())
     findings: list[analyze.Finding] = []
     for chunk in analyze._batch(segs, budget):
         if STATE["cancel"].is_set():
@@ -131,9 +140,16 @@ def _run_variant(paras: list[dict], model: str, system: str,
         hints = {s.seg_id: sorted({h.category for h in hits_by_seg.get(s.seg_id, [])})
                  for s in chunk}
         hints = {k: v for k, v in hints.items() if v}
+        sys_used = system
+        if learn:
+            # ③ 유사 사례 — 이 묶음의 문단에서 나온 사례는 뺀다 (leave-one-out)
+            memory.set_context(True, exclude_texts={s.text for s in chunk})
+            block, _info = memory.examples_for([s.text for s in chunk], use_embed=use_embed)
+            if block:
+                sys_used = analyze.SYSTEM + "\n\n" + block
         try:
             findings += analyze._analyze_batch("", 1, 1, chunk, hints, opts,
-                                               system_override=system, cancel=STATE["cancel"])
+                                               system_override=sys_used, cancel=STATE["cancel"])
         except analyze.Aborted:              # [중단] 이 모델 호출 도중에 눌린 경우
             raise _Cancelled()
         if progress:
@@ -141,7 +157,25 @@ def _run_variant(paras: list[dict], model: str, system: str,
 
     # 실제 파이프라인과 같은 병합·안전망·오탐 필터를 통과시킨다
     deck = SimpleNamespace(segments=segs)
+    memory.set_context(learn)
     resolved, _marks = merge.resolve(deck, findings, hits_by_seg)
+    if learn:
+        # ①② 문단 기억·제외 사전 — 문단마다 자기 자신에서 나온 기억은 뺀다 (leave-one-out)
+        def _mk(seg, quote, span, grade, risk, category, reason):
+            return analyze.Finding(seg_id=seg.seg_id, slide_no=seg.slide_no, quote=quote, grade=grade,
+                                   category=category, implicit=category in config.IMPLICIT_CATEGORIES,
+                                   disclosure_risk=risk, reason=reason, source="memory", span=span)
+        kept: list[analyze.Finding] = []
+        for seg in segs:
+            memory.set_context(True, exclude_texts={seg.text})
+            part = [f for f in resolved if f.seg_id == seg.seg_id]
+            part, _ = memory.apply_memory(SimpleNamespace(segments=[seg]), part, _mk)
+            part, _ = memory.apply_excludes(part)
+            part, _ = memory.rescue_confirmed(SimpleNamespace(segments=[seg]), part,
+                                              {seg.seg_id: hits_by_seg.get(seg.seg_id, [])}, _mk)
+            kept += part
+        resolved = kept
+    memory.clear_context()
     preds: dict[str, list[dict]] = {}
     for f in resolved:
         text = segs[f.seg_id - 1].text
@@ -260,9 +294,14 @@ def _config_snapshot() -> dict:
     # examples = 쌓인 풀 크기, injected = 실제로 프롬프트에 들어간 칸 수.
     # 프롬프트를 바꾸는 것은 injected 쪽이다. 풀은 계속 커지지만 판정에는 영향이 없으므로
     # 둘을 나눠 기록해야 "점수가 왜 올랐는지" 를 나중에 설명할 수 있다.
+    ms = memory.stats()
     return {"model": config.MODEL, "rules": rules,
             "examples": st["examples"], "injected": st["injected"],
-            "dataset": st["dataset"]}
+            "dataset": st["dataset"],
+            # 검토 학습 — 켜짐 여부와 기억 크기 (회차 간 비교 설명용)
+            "learn": bool(config.LEARN), "memory_paras": ms["paras"], "auto_rules": ms["rules"],
+            "excludes": ms["excludes"], "retrieval_pool": ms["examples"],
+            "embed": bool(config.LEARN and config.LEARN_EMBED and memory.embed_available())}
 
 
 def _injected_change(prev_n, now_n) -> str | None:
@@ -288,6 +327,11 @@ def _changes(prev: dict | None, snap: dict) -> dict | None:
         "dataset_delta": snap["dataset"] - (p.get("dataset") or 0),
         "model_change": (f'{p.get("model")} → {snap["model"]}'
                          if p.get("model") and p.get("model") != snap["model"] else None),
+        # 검토 학습의 기억 크기 변화 (없던 회차는 0 으로 본다)
+        "memory_delta": (snap.get("memory_paras") or 0) - (p.get("memory_paras") or 0),
+        "auto_rules_delta": (snap.get("auto_rules") or 0) - (p.get("auto_rules") or 0),
+        "learn_change": (f'{"켬" if p.get("learn") else "끔"} → {"켬" if snap.get("learn") else "끔"}'
+                         if ("learn" in p) and p.get("learn") != snap.get("learn") else None),
     }
 
 

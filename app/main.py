@@ -53,7 +53,7 @@ from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, U
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import analyze, config, evaluate, local, pipeline, review
+from . import analyze, config, evaluate, local, memory, pipeline, review
 
 # 화면 파일(index.html)이 있는 폴더
 STATIC = Path(__file__).parent / "static"
@@ -180,7 +180,8 @@ def _start(name: str, src: Path, opts: config.RunOptions,
     return job
 
 
-def _options(model: str, think: bool, scan_all: bool, tag_marks: bool) -> config.RunOptions:
+def _options(model: str, think: bool, scan_all: bool, tag_marks: bool,
+             learn: bool = True, learn_embed: bool = True) -> config.RunOptions:
     """화면의 체크박스 값 → RunOptions. 고른 모델이 이 PC 에 없으면 시작 전에 알려 준다."""
     model = model or config.MODEL
     h = analyze.health()
@@ -188,7 +189,8 @@ def _options(model: str, think: bool, scan_all: bool, tag_marks: bool) -> config
         raise HTTPException(400, f"모델 {model} 이 이 PC 에 없습니다. 검은 창에서  ollama pull {model}  을 실행하거나 "
                                  f"화면의 모델 선택을 '정밀' 로 두세요.")
     return config.RunOptions(model=model, think=think,
-                             scan_all_paragraphs=scan_all, tag_marks=tag_marks)
+                             scan_all_paragraphs=scan_all, tag_marks=tag_marks,
+                             learn=bool(learn) and config.LEARN, learn_embed=bool(learn_embed))
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -214,6 +216,14 @@ def health() -> JSONResponse:
     # 화면의 정밀/빠름 선택지 — 이 PC 에 내려받아진 것만 고를 수 있게 installed 를 같이 준다
     h["choices"] = [{**c, "installed": analyze.model_available(c["id"], h.get("models", []))}
                     for c in config.MODEL_CHOICES]
+    # 검토 학습 — 스위치 기본값, 쌓인 기억 크기, 뜻 기준 검색(bge-m3) 설치 여부
+    try:
+        ms = memory.stats()
+    except Exception:  # noqa: BLE001
+        ms = {"paras": 0, "rules": 0, "excludes": 0, "examples": 0}
+    h["learn"] = {"enabled": config.LEARN, "embed_default": config.LEARN_EMBED,
+                  "embed_model": config.EMBED_MODEL,
+                  "embed_installed": memory.embed_available(h.get("models", [])), **ms}
     return JSONResponse(h)
 
 
@@ -224,6 +234,8 @@ async def create_job(
     think: bool = Form(False),
     scan_all: bool = Form(True),
     tag_marks: bool = Form(False),
+    learn: bool = Form(True),
+    learn_embed: bool = Form(True),
 ) -> JSONResponse:
     """파일 업로드를 받아 임시 폴더에 저장하고, 분석 스레드를 시작한다."""
     name = file.filename or "deck.pptx"
@@ -235,7 +247,7 @@ async def create_job(
     with src.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
 
-    job = _start(name, src, _options(model, think, scan_all, tag_marks), "upload", workdir)
+    job = _start(name, src, _options(model, think, scan_all, tag_marks, learn, learn_embed), "upload", workdir)
     return JSONResponse({"job_id": job.job_id})
 
 
@@ -308,7 +320,9 @@ def local_job(payload: dict = Body(...)) -> JSONResponse:
     opts = _options(str(payload.get("model") or config.MODEL),
                     bool(payload.get("think", False)),
                     bool(payload.get("scan_all", True)),
-                    bool(payload.get("tag_marks", False)))
+                    bool(payload.get("tag_marks", False)),
+                    bool(payload.get("learn", True)),
+                    bool(payload.get("learn_embed", True)))
     job = _start(src.name, src, opts, "local")
     return JSONResponse({"job_id": job.job_id})
 

@@ -177,12 +177,21 @@ def resolve(deck: Deck, findings: list[Finding],
     # 단 공개 신호가 붙었으면 남긴다 — 그 구간은 C(공개 관련정보)로 표시된다.
     resolved = [f for f in resolved if f.grade != "C" or f.disclosure_risk]
 
-    # 슬라이드 → 문단 → 위치 순으로 정렬
+    return sort_findings(resolved), build_marks(deck, resolved)
+
+
+def sort_findings(resolved: list[Finding]) -> list[Finding]:
+    """슬라이드 → 문단 → 위치 순으로 정렬."""
     resolved.sort(key=lambda f: (f.slide_no, f.seg_id,
                                  f.span[0] if f.span else 0,
                                  -GRADE_RANK[f.grade]))
+    return resolved
 
-    # ── 4) 칠할 구간 계획 — 겹치는 구간은 하나로 합치고 더 높은 등급을 따른다 ──
+
+def build_marks(deck: Deck, resolved: list[Finding]) -> list[Mark]:
+    """── 4) 칠할 구간 계획 — 겹치는 구간은 하나로 합치고 더 높은 등급을 따른다 ──
+    (pipeline 이 검토 기억을 적용해 후보를 바꾼 뒤 다시 부를 수 있도록 따로 떼어 둠)"""
+    seg_map: dict[int, Segment] = {s.seg_id: s for s in deck.segments}
     marks: list[Mark] = []
     by_seg: dict[int, list[Finding]] = {}
     for f in resolved:
@@ -220,4 +229,4 @@ def resolve(deck: Deck, findings: list[Finding],
         if cur_s is not None:
             marks.append(Mark(seg_id, seg.slide_no, (cur_s, cur_e), cur_g, cur_r))
 
-    return resolved, marks
+    return marks
