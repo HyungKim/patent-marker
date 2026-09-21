@@ -7,6 +7,7 @@ tests/mock_llm.py ─ "가짜 Ollama" 로 모델 연동 경로 전체를 점검 
     실행:  python tests/mock_llm.py
            python tests/mock_llm.py samples/회사보고자료_예시.pptx out_mock.pptx
            python tests/mock_llm.py --serve        ← 가짜 서버만 띄워 두기 (웹 화면·명령행 점검용)
+           python tests/mock_llm.py --serve 20     ← 답을 20초 늦게 (느린 PC 흉내 — 경과 표시·[중단] 점검)
 
 다른 테스트에서:  import mock_llm; mock_llm.start()  → 포트 11599 에 가짜 서버가 뜬다
 """
@@ -16,7 +17,8 @@ import json
 import re
 import sys
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -44,6 +46,9 @@ PICKERS = [
 class Handler(BaseHTTPRequestHandler):
     """Ollama 의 /api/tags, /api/chat 을 흉내 내는 최소 구현."""
 
+    protocol_version = "HTTP/1.1"     # 진짜 Ollama 처럼 chunked 스트리밍
+    delay = 0.0                       # 테스트용: 답하기 전에 이만큼 기다린다 (느린 PC 흉내)
+
     def log_message(self, *a):
         pass
 
@@ -52,6 +57,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if Handler.delay:
+            time.sleep(Handler.delay)
         user = body["messages"][-1]["content"]
         findings = []
         for line in user.splitlines():
@@ -69,8 +76,16 @@ class Handler(BaseHTTPRequestHandler):
                     "disclosure_risk": cat == "공개이력", "reason": reason,
                 })
                 break
-        self._send({"message": {"content": json.dumps({"findings": findings},
-                                                      ensure_ascii=False)}})
+        text = json.dumps({"findings": findings}, ensure_ascii=False)
+        if body.get("stream"):
+            # 진짜 Ollama 처럼 조각(NDJSON)으로 나눠 보낸다 — analyze._chat 의 이어 붙이기 경로를 검사
+            cut = max(1, len(text) // 3)
+            pieces = [text[i:i + cut] for i in range(0, len(text), cut)]
+            self._send_stream([{"message": {"role": "assistant", "content": pc}, "done": False} for pc in pieces]
+                              + [{"message": {"role": "assistant", "content": ""}, "done": True,
+                                  "eval_count": len(text)}])
+        else:
+            self._send({"message": {"content": text}})
 
     def _send(self, obj):
         raw = json.dumps(obj).encode()
@@ -80,8 +95,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _send_stream(self, objs):
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            for obj in objs:
+                raw = json.dumps(obj).encode() + b"\n"
+                self.wfile.write(f"{len(raw):x}\r\n".encode() + raw + b"\r\n")
+                self.wfile.flush()
+            self.wfile.write(b"0\r\n\r\n")
+        except (BrokenPipeError, ConnectionResetError):
+            pass                      # 클라이언트가 [중단] 으로 먼저 끊은 경우 — 정상
 
-_SERVER: HTTPServer | None = None
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+
+_SERVER: ThreadingHTTPServer | None = None
 
 
 def start() -> str:
@@ -90,7 +125,8 @@ def start() -> str:
     host = f"http://127.0.0.1:{PORT}"
     if _SERVER is None:
         try:
-            _SERVER = HTTPServer(("127.0.0.1", PORT), Handler)
+            # 진짜 Ollama 처럼 요청을 동시에 받는다 (/api/chat 이 느려도 /api/tags 는 바로 답함)
+            _SERVER = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
         except OSError:
             # 다른 창에서 `python tests/mock_llm.py --serve` 로 이미 띄워 둔 경우 — 그대로 쓴다
             import urllib.request
@@ -114,7 +150,9 @@ def main() -> None:
     analyze.config.OLLAMA_HOST = config.OLLAMA_HOST
 
     if len(sys.argv) > 1 and sys.argv[1] == "--serve":
-        print(f"가짜 Ollama 대기 중: {host}   (Ctrl+C 로 종료)")
+        if len(sys.argv) > 2:                      # --serve 20 : 답하기 전 20초 기다림 (느린 PC 흉내)
+            Handler.delay = float(sys.argv[2])
+        print(f"가짜 Ollama 대기 중: {host}   (Ctrl+C 로 종료, 지연 {Handler.delay}초)")
         print(f"  다른 창에서:  PM_OLLAMA_HOST={host} python -m app.main")
         try:
             threading.Event().wait()

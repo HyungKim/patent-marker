@@ -88,7 +88,8 @@ BEHAVIOR = {
 }
 
 
-def _fake_batch(deck_title, slide_no, total, segs, hints, opts, system_override=None):
+def _fake_batch(deck_title, slide_no, total, segs, hints, opts, system_override=None, **_kw):
+    # _kw: cancel·progress 등 진짜 _analyze_batch 가 받는 부가 인자 (가짜는 쓰지 않음)
     is_base = system_override == analyze.SYSTEM
     out = []
     for s in segs:
