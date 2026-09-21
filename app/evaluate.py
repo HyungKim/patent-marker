@@ -131,8 +131,11 @@ def _run_variant(paras: list[dict], model: str, system: str,
         hints = {s.seg_id: sorted({h.category for h in hits_by_seg.get(s.seg_id, [])})
                  for s in chunk}
         hints = {k: v for k, v in hints.items() if v}
-        findings += analyze._analyze_batch("", 1, 1, chunk, hints, opts,
-                                           system_override=system)
+        try:
+            findings += analyze._analyze_batch("", 1, 1, chunk, hints, opts,
+                                               system_override=system, cancel=STATE["cancel"])
+        except analyze.Aborted:              # [중단] 이 모델 호출 도중에 눌린 경우
+            raise _Cancelled()
         if progress:
             progress()
 

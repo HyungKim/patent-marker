@@ -10,12 +10,16 @@ pipeline.py ─ 파일 하나를 끝까지 처리하는 공통 흐름
 [초보자를 위한 설명]
   - progress : "지금 어느 단계인지" 를 알려 주는 콜백 함수. 웹 화면은 이 값으로
                진행 막대를 그리고, 명령행은 한 줄씩 출력합니다. 없어도 됩니다.
-  - cancel   : '중단' 신호(threading.Event). 슬라이드를 넘어갈 때마다 확인해서
-               켜져 있으면 Cancelled 예외로 멈춥니다.
+               모델을 기다리는 동안에는 2초마다 "N분 NN초 경과 · 문단 읽는 중 / 답변 작성 중 N자" 로 갱신됩니다.
+  - cancel   : '중단' 신호(threading.Event). 슬라이드 사이에서 확인할 뿐 아니라,
+               모델 호출 도중에도 analyze._chat 이 소켓을 끊어 즉시 멈춥니다 (Cancelled 예외).
+  - 시간 제한 : 없습니다 (config.REQUEST_TIMEOUT=0). 느린 PC 에서 슬라이드 하나가 10분을 넘겨도
+               끊지 않습니다. 대신 Ollama 프로세스가 사라지면 analyze 가 감지해 OllamaError 로 멈춥니다.
 """
 from __future__ import annotations
 
 import threading
+import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,7 +90,22 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
                 for s in segs
             }
             hints = {k: sorted(set(v)) for k, v in hints.items() if v}
-            all_findings += analyze.analyze_slide(title, slide_no, total, segs, hints, opts)
+
+            # 시간 제한이 없는 대신 "살아 있음" 을 보여 준다: 경과 시간 + 모델이 읽는 중인지 쓰는 중인지
+            t_slide = time.monotonic()
+            snapshot = [f.to_public() for f in all_findings]
+
+            def alive(nchars: int, _n=slide_no, _t=t_slide, _snap=snapshot) -> None:
+                sec = int(time.monotonic() - _t)
+                phase = f"답변 작성 중 {nchars}자" if nchars else "문단 읽는 중"
+                report(f"슬라이드 {_n} 분석 중 (온디바이스 모델) · {sec // 60}분 {sec % 60:02d}초 경과 · {phase}",
+                       _n - 1, total, _snap)
+
+            try:
+                all_findings += analyze.analyze_slide(title, slide_no, total, segs, hints, opts,
+                                                      cancel=cancel, progress=alive)
+            except analyze.Aborted:
+                raise Cancelled()
         report(f"슬라이드 {slide_no} 분석 완료", slide_no, total,
                [f.to_public() for f in all_findings])
 

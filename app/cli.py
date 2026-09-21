@@ -60,13 +60,17 @@ def run_one(src: Path, out_dir: Path | None, opts: config.RunOptions) -> Path:
     if note:
         print(note)
     t0 = time.time()
-    last = {"slide": 0}
+    last = {"slide": 0, "beat": time.time()}
 
     def progress(p: pipeline.Progress) -> None:
         if p.slide_total and p.slide_done != last["slide"]:
             last["slide"] = p.slide_done
+            last["beat"] = time.time()
             print(f"  슬라이드 {p.slide_done}/{p.slide_total} · 후보 {len(p.findings or [])}건 "
                   f"({time.time() - t0:.0f}초)")
+        elif "경과" in p.stage and time.time() - last["beat"] >= 60:
+            last["beat"] = time.time()          # 시간 제한이 없으므로 1분마다 살아 있음을 보여 준다
+            print(f"    … {p.stage}")
 
     resolved, stats = pipeline.run(src, dst, opts, progress=progress)
     g = stats.get("grades", {})

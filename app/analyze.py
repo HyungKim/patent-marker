@@ -23,11 +23,17 @@ analyze.py ─ 온디바이스 LLM(Ollama + Qwen3) 에게 판정을 맡기는 2�
 """
 from __future__ import annotations
 
+import http.client
 import json
 import re
+import socket
+import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from typing import Callable
 
 from . import config, lexicon
 from .extract import Deck, Segment
@@ -164,28 +170,165 @@ class OllamaError(RuntimeError):
     """Ollama 에 연결하지 못했을 때. main.py 가 이 오류를 잡아 화면에 안내를 띄운다."""
 
 
-def _post(path: str, payload: dict, timeout: int) -> dict:
-    """Ollama 에 JSON 을 POST 하고 JSON 답을 받는다. 표준 라이브러리만 사용."""
-    req = urllib.request.Request(
-        f"{config.OLLAMA_HOST}{path}",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+# Ollama 는 같은 PC(127.0.0.1)에 있으므로 회사 프록시(HTTP_PROXY 환경 변수·인터넷 옵션)를 거치면 안 된다.
+# 프록시를 무시하는 전용 열기 도구 — health()·_server_gone() 이 쓴다. (_chat 은 http.client 를 직접 써서 원래 프록시를 안 탄다)
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+class Aborted(Exception):
+    """사용자의 '중단' 신호로 모델 호출을 끊었을 때. pipeline.py 가 Cancelled 로 바꿔 올린다."""
+
+
+# 진행 상황 콜백: (지금까지 받은 답변 글자 수) → None.  모델이 아직 문단을 읽는 중이면 0.
+ProgressFn = Callable[[int], None]
+
+_GUARD_TICK = 0.5        # 초. 중단 신호를 이만큼 간격으로 확인한다
+_PING_EVERY = 15         # 초. 서버 생존 확인(/api/tags) 간격
+_PING_FAILS = 3          # 연속 이만큼 '연결 거부' 면 서버가 죽은 것으로 본다
+
+
+def _server_gone() -> bool:
+    """Ollama 프로세스가 사라졌는지 확인. 느려서 늦게 답하는 것은 '살아 있음' 으로 본다."""
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
+        with _DIRECT.open(f"{config.OLLAMA_HOST}/api/tags", timeout=5):
+            return False
     except urllib.error.URLError as e:
+        # 연결 거부·리셋 = 프로세스 없음. 그 밖(시간 초과 등)은 바쁜 것일 수 있어 살아 있다고 본다
+        return isinstance(e.reason, (ConnectionRefusedError, ConnectionResetError))
+    except (ConnectionRefusedError, ConnectionResetError):
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _chat(payload: dict, cancel: threading.Event | None = None,
+          progress: ProgressFn | None = None) -> dict:
+    """/api/chat 을 스트리밍으로 부르고, 조각을 이어 붙여 한 번에 받은 것과 같은 모양의 dict 로 돌려준다.
+
+    [시간 제한을 두지 않는 대신 이렇게 지킨다]
+      · 회사 PC(CPU 만, 16GB)에서는 슬라이드 하나에 10분이 넘게 걸릴 수 있어 고정 제한을 없앴다.
+      · cancel 신호가 켜지면 감시 스레드가 소켓을 끊어 **즉시** 멈춘다 (Aborted). 모델이 아직
+        문단을 읽는 중(아무 바이트도 안 온 상태)이어도 끊긴다.
+      · 감시 스레드가 15초마다 /api/tags 로 서버 생존을 확인해, 프로세스가 사라졌으면 끊는다 (OllamaError).
+      · config.REQUEST_TIMEOUT(PM_TIMEOUT) 이 0 보다 크면 "그 초 동안 아무 바이트도 안 올 때" 만 끊는다.
+        답이 한 글자라도 계속 오는 동안은 시간이 흘러도 끊지 않는다 (무응답 제한이지 총량 제한이 아님).
+      · progress 콜백으로 지금까지 받은 답변 글자 수를 알려 화면이 "살아 있음" 을 보여 준다.
+    """
+    u = urllib.parse.urlsplit(config.OLLAMA_HOST)
+    https = u.scheme == "https"
+    conn_cls = http.client.HTTPSConnection if https else http.client.HTTPConnection
+    timeout = config.REQUEST_TIMEOUT if config.REQUEST_TIMEOUT > 0 else None
+    conn = conn_cls(u.hostname or "127.0.0.1", u.port or (443 if https else 80), timeout=timeout)
+    body = json.dumps({**payload, "stream": True}).encode()
+    path = (u.path.rstrip("/") or "") + "/api/chat"
+
+    state = {"done": False, "reason": ""}      # reason: "cancel" | "server_down"
+    nchars = 0
+
+    def _kill(reason: str) -> None:
+        """다른 스레드에서 소켓을 끊어, 막혀 있는 읽기를 오류로 깨운다."""
+        if state["done"]:
+            return
+        state["reason"] = reason
+        try:
+            sock = conn.sock
+            if sock is not None:
+                sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _guard() -> None:
+        """중단 신호 확인 + 서버 생존 확인 + 2초마다 진행 콜백."""
+        fails = 0
+        last_ping = last_tick = time.monotonic()
+        while not state["done"]:
+            if cancel is not None and cancel.wait(_GUARD_TICK):
+                _kill("cancel")
+                return
+            if cancel is None:
+                time.sleep(_GUARD_TICK)
+            now = time.monotonic()
+            if now - last_ping >= _PING_EVERY:
+                last_ping = now
+                fails = fails + 1 if _server_gone() else 0
+                if fails >= _PING_FAILS:
+                    _kill("server_down")
+                    return
+            if progress is not None and now - last_tick >= 2:
+                last_tick = now
+                progress(nchars)
+
+    if cancel is not None and cancel.is_set():
+        raise Aborted()
+    threading.Thread(target=_guard, daemon=True).start()
+
+    content: list[str] = []
+    final: dict = {}
+    try:
+        conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+        if state["reason"]:                      # 요청을 보내는 사이에 중단됨
+            raise OSError("aborted")
+        resp = conn.getresponse()                # 모델이 문단을 다 읽고 첫 글자를 쓸 때까지 여기서 기다린다
+        if resp.status != 200:
+            detail = resp.read(300).decode("utf-8", "replace")
+            raise OllamaError(f"Ollama 응답 오류 {resp.status}: {detail}")
+        last_report = 0.0
+        for line in resp:                        # 한 줄 = JSON 조각 하나
+            if not line.strip():
+                continue
+            obj = json.loads(line)
+            piece = (obj.get("message") or {}).get("content") or ""
+            if piece:
+                content.append(piece)
+                nchars += len(piece)
+                if progress is not None and time.monotonic() - last_report >= 0.5:
+                    last_report = time.monotonic()
+                    progress(nchars)
+            if obj.get("error"):
+                raise OllamaError(f"Ollama 오류: {obj['error']}")
+            if obj.get("done"):
+                final = obj
+                break
+    except OllamaError:
+        raise
+    except (OSError, http.client.HTTPException, ValueError) as e:
+        if state["reason"] == "cancel":
+            raise Aborted() from None
+        if state["reason"] == "server_down":
+            raise OllamaError(
+                f"Ollama 서버가 사라져 분석을 멈췄습니다 ({config.OLLAMA_HOST}). "
+                "작업 표시줄의 Ollama 를 다시 실행하거나 run.bat 을 다시 켠 뒤 시도하세요."
+            ) from e
+        if isinstance(e, socket.timeout) or (isinstance(e, TimeoutError)):
+            raise OllamaError(
+                f"Ollama 가 {timeout}초 동안 아무 응답도 보내지 않아 멈췄습니다. "
+                "느린 PC 라면 PM_TIMEOUT=0 (제한 없음, 기본값) 으로 두세요."
+            ) from e
         raise OllamaError(
             f"Ollama 에 연결하지 못했습니다 ({config.OLLAMA_HOST}). "
             f"`ollama serve` 가 실행 중인지 확인하세요. 원인: {e}"
         ) from e
+    finally:
+        state["done"] = True
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+    if cancel is not None and cancel.is_set():
+        raise Aborted()
+    if progress is not None:
+        progress(nchars)
+    return {**final, "message": {**(final.get("message") or {}), "content": "".join(content)}}
 
 
 def health() -> dict:
     """Ollama 가 떠 있는지, 어떤 모델이 있는지 확인한다. (/api/tags)"""
     try:
-        with urllib.request.urlopen(f"{config.OLLAMA_HOST}/api/tags", timeout=5) as r:
+        with _DIRECT.open(f"{config.OLLAMA_HOST}/api/tags", timeout=5) as r:
             tags = json.loads(r.read().decode())
     except Exception as e:
         return {"ok": False, "error": str(e), "models": []}
@@ -274,8 +417,14 @@ def _batch(segs: list[Segment], max_chars: int) -> list[list[Segment]]:
 # ═════════════════════════════════════════════════════════════════
 def analyze_slide(deck_title: str, slide_no: int, total: int,
                   segs: list[Segment], hints: dict[int, list[str]],
-                  opts: config.RunOptions) -> list[Finding]:
-    """슬라이드 한 장을 분석한다. main.py 가 슬라이드마다 이 함수를 부른다."""
+                  opts: config.RunOptions,
+                  cancel: threading.Event | None = None,
+                  progress: ProgressFn | None = None) -> list[Finding]:
+    """슬라이드 한 장을 분석한다. pipeline.py 가 슬라이드마다 이 함수를 부른다.
+
+    cancel   : '중단' 신호. 켜지면 진행 중인 모델 호출을 끊고 Aborted 를 올린다.
+    progress : 지금까지 받은 답변 글자 수를 알리는 콜백 (화면의 "살아 있음" 표시용).
+    """
     if not segs:
         return []
     # 시스템 프롬프트와 답변 몫을 빼고 남는 만큼만 본문에 쓴다 (한글 1자 ≒ 1토큰 가정)
@@ -284,14 +433,17 @@ def analyze_slide(deck_title: str, slide_no: int, total: int,
     budget = max(config.NUM_CTX - len(_system_prompt()) - 1500, 1200)
     out: list[Finding] = []
     for chunk in _batch(segs, budget):
-        out += _analyze_batch(deck_title, slide_no, total, chunk, hints, opts)
+        out += _analyze_batch(deck_title, slide_no, total, chunk, hints, opts,
+                              cancel=cancel, progress=progress)
     return out
 
 
 def _analyze_batch(deck_title: str, slide_no: int, total: int,
                    segs: list[Segment], hints: dict[int, list[str]],
                    opts: config.RunOptions,
-                   system_override: str | None = None) -> list[Finding]:
+                   system_override: str | None = None,
+                   cancel: threading.Event | None = None,
+                   progress: ProgressFn | None = None) -> list[Finding]:
     """문단 묶음 하나를 Ollama 에 보내고 Finding 목록으로 바꾼다. ← 모델을 실제로 부르는 곳
 
     system_override 는 성능 측정(evaluate.py)이 "최초 설정 프롬프트" 로
@@ -304,15 +456,14 @@ def _analyze_batch(deck_title: str, slide_no: int, total: int,
             {"role": "user",
              "content": _build_user_prompt(deck_title, slide_no, total, segs, hints)},
         ],
-        "stream": False,                          # 답을 한 번에 받는다
-        "format": SCHEMA,                         # JSON 스키마 강제
+        "format": SCHEMA,                         # JSON 스키마 강제 (_chat 이 stream=True 로 조각을 받아 이어 붙인다)
         "think": opts.think,                      # Qwen3 생각하기 모드
         "options": {
             "temperature": config.TEMPERATURE,
             "num_ctx": config.NUM_CTX,
         },
     }
-    data = _post("/api/chat", payload, config.REQUEST_TIMEOUT)
+    data = _chat(payload, cancel=cancel, progress=progress)
     raw = (data.get("message") or {}).get("content", "")
 
     # 모델 답을 검증하면서 Finding 으로 바꾼다 (엉뚱한 seg_id, 등급 값 등은 보정)
