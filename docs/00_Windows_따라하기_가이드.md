@@ -19,7 +19,8 @@
   4. 생긴 폴더  C:\patent-marker-main  을 클릭하고 F2 키 → 이름을  patent_marker  로 바꿉니다.
   5. 그 안의  setup.bat  을 더블클릭합니다. (GitHub 저장소에는 15GB 설치 꾸러미가 들어 있지 않아,
      Python·Ollama·모델 5GB 를 인터넷으로 자동 설치합니다. 모델 다운로드가 수십 분 걸릴 수 있습니다.
-     마지막 [5/5-2] 에서 "빠름" 모델(약 2.5GB)도 받습니다 — 실패해도 설치는 끝나고, 정밀 모드는 그대로 됩니다.)
+     마지막 [5/5-2] 에서 "빠름" 모델(약 2.5GB), [5/5-3] 에서 뜻 기준 검색 모델 bge-m3(약 1.2GB)도 받습니다 —
+     둘 다 실패해도 설치는 끝나고, 정밀 모드와 검토 학습(글자 겹침)은 그대로 됩니다.)
      회사 PC 에서 [2/5] 라이브러리 설치가 SSL 오류로 실패하면 인증서 확인을 건너뛰고 자동으로
      한 번 더 시도합니다. 그래도 멈추면 → "문제가 생기면" 의 U 항목.
   6. 이후는 [4] 실행 단계부터 아래와 완전히 동일합니다.
@@ -158,6 +159,8 @@
      ※ 파일을 넣는 방법은 이 밖에도 셋 더 있습니다 → [7-2]. 회사 PC 처럼 브라우저 업로드가
         막혀 있어도 ①~③ 은 됩니다.
   3. "모델" 은 정밀(기본) 그대로, 체크박스도 그대로 두고 오른쪽 아래의  "분석 시작"  을 누릅니다.
+     ("검토 학습 적용" 은 켜 두는 것이 기본입니다 — 검토 데이터가 없을 땐 아무 일도 안 하고, 쌓이면 자동으로 씁니다.
+      "뜻 기준 검색 (bge-m3)" 이 "미설치" 로 회색이면 그대로 두세요 — 글자 겹침으로 동작합니다. 켜려면 문제 해결 R.)
      ("빠름" 은 급한 문서를 초벌로 훑을 때만 — 약 3배 빠르지만 후보를 1/3 덜 잡고 A 등급이 없습니다.
       "빠름 … (미설치)" 로 회색이면 검은 창에서  ollama pull qwen3:4b-instruct  를 한 번 실행하면 됩니다)
   4. 진행 막대와 "슬라이드 N 분석 중 ... N분 NN초 경과 · 문단 읽는 중 / 답변 작성 중 N자" 글자가
@@ -270,10 +273,12 @@
         그동안 쌓은 검토 교정, 파이썬 설치, 넣어 둔 파일과 결과가 들어 있습니다.
 
   6. setup.bat 은 보통 다시 실행하지 않습니다 (새로 설치할 것이 없고, 모델 qwen3:8b 도 쓰던 것을 그대로 씁니다).
-     ※ 예외 — 2026-09-21d 이후 처음 올리는 경우: 화면의 "빠름" 모델(qwen3:4b-instruct, 약 2.5GB)이 아직 없습니다.
-        검은 창(run.bat 창 또는 cmd)에서  ollama pull qwen3:4b-instruct  를 한 번 실행하거나,
-        setup.bat 을 다시 실행하면 됩니다 — 있는 것(Python·라이브러리·Ollama·8b)은 건너뛰고 빠름 모델만 받습니다.
-        안 받아도 정밀 모드는 그대로 됩니다.
+     ※ 예외 — 2026-09-21d 이후 처음 올리는 경우: 화면의 "빠름" 모델(qwen3:4b-instruct, 약 2.5GB)과
+        뜻 기준 검색 모델(bge-m3, 약 1.2GB)이 아직 없습니다. 검은 창(run.bat 창 또는 cmd)에서
+          ollama pull qwen3:4b-instruct
+          ollama pull bge-m3
+        를 한 번씩 실행하거나, setup.bat 을 다시 실행하면 됩니다 — 있는 것(Python·라이브러리·Ollama·8b)은
+        건너뛰고 없는 모델만 받습니다. 안 받아도 정밀 모드와 검토 학습(글자 겹침)은 그대로 됩니다.
 
   ── 폴더를 지우고 새로 설치해도 됩니다 (처음 설치와 같은 절차) ────────
      남길 것이 없다면(검토 교정을 아직 안 쌓았다면) 이 방법이 오히려 깔끔합니다 — 예전 파일이 섞일 여지가 없습니다.
@@ -300,7 +305,7 @@
   ② 파일이 진짜 바뀌었나 — Win + R 을 누르고 cmd 라고 친 뒤 Enter,
      열린 검은 창에 아래 한 줄을 붙여넣고 Enter 를 누릅니다.
 
-       cd /d C:\patent_marker && .venv\Scripts\python.exe tests\test_review.py && .venv\Scripts\python.exe tests\test_eval.py && .venv\Scripts\python.exe tests\test_local_input.py && .venv\Scripts\python.exe tests\test_model_call.py
+       cd /d C:\patent_marker && .venv\Scripts\python.exe tests\test_review.py && .venv\Scripts\python.exe tests\test_eval.py && .venv\Scripts\python.exe tests\test_local_input.py && .venv\Scripts\python.exe tests\test_model_call.py && .venv\Scripts\python.exe tests\test_memory.py
 
      맨 아랫줄에 이렇게 나오면 app 과 tests 의 파일이 전부 새 것입니다.
 
@@ -512,6 +517,12 @@
           A 등급을 못 매기므로 초벌용입니다. 정식 검토는 "정밀" 로 다시 돌리세요 (실측 표: docs\05_개선_이력.md).
           "빠름" 이 미설치로 보이면 검은 창에서  ollama pull qwen3:4b-instruct  (또는 setup.bat 다시 실행).
        (2026-09-21c 부터 모델 답을 절반 길이로 줄여 같은 PC 에서 약 절반 시간이 됐습니다 — 그 이전 버전이면 먼저 업데이트)
+
+  R. "뜻 기준 검색 (bge-m3)" 이 미설치로 회색이다 / 검토 학습이 뭔지 모르겠다
+     → 검토 학습은 [검토 반영] 으로 쌓인 교정을 다음 분석에 되살리는 장치입니다 (docs\03 의 3-1).
+       회색인 것은 뜻 기준 검색용 임베딩 모델(bge-m3, 1.2GB)이 아직 없다는 뜻이고, 없어도 글자 겹침 방식으로 동작합니다.
+       켜려면 검은 창(run.bat 창 또는 cmd)에서  ollama pull bge-m3  한 번 → 브라우저 새로고침. (setup.bat 재실행도 됩니다)
+       PC 가 버거우면 이 체크박스만 끄면 됩니다 (메모리 1.2GB 절약).
 
   P. "④ 브라우저로 올리기" 를 눌러도 파일 창이 안 뜨거나, 분석 시작 때 "업로드 실패" 가 나온다
      → 회사 보안 정책으로 브라우저 업로드가 막힌 것입니다. 프로그램은 정상입니다.
