@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n✗ 모델 {opts.model} 이 없습니다. `ollama pull {opts.model}` 로 먼저 내려받으세요.")
         return 1
 
-    print(f"온디바이스 모델 {opts.model} · 파일 {len(srcs)}개")
+    print(f"온디바이스 모델 {opts.model} · 파일 {len(srcs)}개 · 도구 버전 {config.VERSION}")
     for src in srcs:
         try:
             run_one(src, out_dir, opts)

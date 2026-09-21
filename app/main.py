@@ -134,10 +134,11 @@ def _run(job: Job, opts: config.RunOptions) -> None:
     except pipeline.Cancelled:
         job.status, job.stage = "cancelled", "사용자 중단"
     except analyze.OllamaError as e:
-        job.status, job.error, job.stage = "error", str(e), "온디바이스 모델 연결 실패"
+        job.status, job.error, job.stage = "error", f"{e}  (버전 {config.VERSION})", "온디바이스 모델 연결 실패"
     except Exception as e:  # noqa: BLE001  (어떤 오류든 화면에 보여 주기 위해 전부 잡음)
         job.status = "error"
-        job.error = f"{type(e).__name__}: {e}"
+        # 어느 단계에서, 어느 버전이 냈는지 같이 적는다 — 화면 문구만 전달받아도 원인을 좁힐 수 있게
+        job.error = f"{type(e).__name__}: {e}  (단계: {job.stage} · 버전 {config.VERSION})"
         job.stage = "오류"
         traceback.print_exc()
     finally:
@@ -186,9 +187,11 @@ def _options(model: str, think: bool, scan_all: bool, tag_marks: bool) -> config
 # ═════════════════════════════════════════════════════════════════
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    """첫 화면. static/index.html 에 화면 토큰을 심어 돌려준다."""
+    """첫 화면. static/index.html 에 화면 토큰과 버전을 심어 돌려준다."""
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    return HTMLResponse(html.replace("__PM_TOKEN__", TOKEN))
+    html = html.replace("__PM_TOKEN__", TOKEN).replace("__PM_VERSION__", config.VERSION)
+    # no-store: 업데이트 뒤 브라우저가 예전 화면을 캐시에서 꺼내 쓰지 않게 (Ctrl+F5 를 잊어도 새 화면)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/health")
@@ -198,6 +201,7 @@ def health() -> JSONResponse:
     h["model"] = config.MODEL
     h["model_ready"] = analyze.model_available(config.MODEL, h.get("models", []))
     h["host"] = config.OLLAMA_HOST
+    h["version"] = config.VERSION
     return JSONResponse(h)
 
 
@@ -452,7 +456,7 @@ def serve() -> None:
     import uvicorn
 
     local.ensure_dirs()
-    print(f"\n  특허 마킹 도구  →  http://{config.HOST}:{config.PORT}")
+    print(f"\n  특허 마킹 도구 (버전 {config.VERSION})  →  http://{config.HOST}:{config.PORT}")
     print(f"  온디바이스 모델 : {config.MODEL} @ {config.OLLAMA_HOST}")
     print(f"  파일 넣는 폴더  : {config.INPUT_DIR}")
     print(f"  결과 저장 폴더  : {config.OUTPUT_DIR}")
