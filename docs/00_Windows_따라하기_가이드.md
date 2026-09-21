@@ -19,6 +19,8 @@
   4. 생긴 폴더  C:\patent-marker-main  을 클릭하고 F2 키 → 이름을  patent_marker  로 바꿉니다.
   5. 그 안의  setup.bat  을 더블클릭합니다. (GitHub 저장소에는 15GB 설치 꾸러미가 들어 있지 않아,
      Python·Ollama·모델 5GB 를 인터넷으로 자동 설치합니다. 모델 다운로드가 수십 분 걸릴 수 있습니다.)
+     회사 PC 에서 [2/5] 라이브러리 설치가 SSL 오류로 실패하면 인증서 확인을 건너뛰고 자동으로
+     한 번 더 시도합니다. 그래도 멈추면 → "문제가 생기면" 의 U 항목.
   6. 이후는 [4] 실행 단계부터 아래와 완전히 동일합니다.
 
 
@@ -470,6 +472,19 @@
   T. mark.bat 에 파일을 끌어다 놓았더니 "Ollama 에 연결할 수 없습니다" 로 끝난다
      → Ollama 가 켜지는 데 30초 넘게 걸린 경우입니다. 30초쯤 뒤에 다시 끌어다 놓으세요.
        계속 그러면 시작 메뉴에서 "Ollama" 를 먼저 실행한 뒤 다시 합니다 ("문제가 생기면" C 항목).
+
+  U. setup.bat 이 [2/5] 라이브러리 설치에서 멈추고 "SSL: CERTIFICATE_VERIFY_FAILED" 또는
+     "self signed certificate" 가 보인다
+     → 회사 보안 프로그램이 인터넷 통신을 가로채는 PC 입니다. (브라우저는 되는데 pip 만 막히는 이유:
+       pip 은 Windows 가 아니라 자체 인증서 목록으로 확인하기 때문입니다.)
+       새 setup.bat 은 실패하면 자동으로  --trusted-host pypi.org --trusted-host files.pythonhosted.org
+       를 붙여 한 번 더 시도하므로 그대로 두면 됩니다.
+       예전 setup.bat 이라면: 메모장으로 열어  "-m pip install"  이 있는 두 줄에서  install  바로 뒤에
+       위 옵션을 끼워 넣고 저장한 뒤 다시 더블클릭합니다. (끝난 단계는 건너뛰고 이어서 갑니다)
+       그래도 안 되고 "ProxyError" 또는 "407" 이 보이면 → 회사 프록시 인증이 필요한 PC 입니다.
+       IT 부서에 프록시 주소를 물어, 시작 → cmd → 아래 두 줄을 입력합니다 (주소·포트는 받은 값으로).
+           set HTTPS_PROXY=http://주소:포트
+           cd /d C:\patent_marker && setup.bat
 
   위에 없는 문제가 생기면: 검은 창의 마지막 10줄 정도를 사진으로 찍거나 적어서 보내 주세요.
 
