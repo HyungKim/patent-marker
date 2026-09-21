@@ -56,7 +56,23 @@ if not exist ".venv\Scripts\python.exe" (
 )
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul 2>&1
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
-if errorlevel 1 ( echo    [실패] 라이브러리 설치 - 인터넷 연결을 확인하세요 & pause & exit /b 1 )
+if errorlevel 1 (
+  REM 회사 PC 는 보안 프로그램이 인터넷 통신을 가로채서 pip 의 인증서 확인이 실패하는 경우가 많다
+  REM ^(브라우저는 되는데 pip 만 SSL 오류^). 그때는 pypi 두 주소의 인증서 확인을 건너뛰고 한 번 더 시도한다.
+  echo.
+  echo    설치가 안 되어 다시 시도합니다 - 회사 보안 프로그램이 통신을 가로채는 PC 이면
+  echo    pypi.org 인증서 확인을 건너뛰어야 설치됩니다 ^(--trusted-host^)
+  ".venv\Scripts\python.exe" -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org --upgrade pip >nul 2>&1
+  ".venv\Scripts\python.exe" -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
+  if errorlevel 1 (
+    echo.
+    echo    [실패] 라이브러리 설치 - 위 오류의 마지막 몇 줄을 적어 두세요.
+    echo           "ProxyError" 나 "407" 이 보이면 회사 프록시 인증이 필요한 PC 입니다:
+    echo           IT 부서에 프록시 주소를 물어  set HTTPS_PROXY=http://주소:포트  를 이 창에서 입력한 뒤 setup.bat 을 다시 실행하세요.
+    pause
+    exit /b 1
+  )
+)
 ".venv\Scripts\python.exe" -c "import pptx, fastapi, uvicorn, multipart"
 if errorlevel 1 ( echo    [실패] 라이브러리 확인 & pause & exit /b 1 )
 echo    완료
