@@ -158,6 +158,10 @@ except HTTPException as e:
     check("헤더가 없어도 403", e.status_code == 403)
 check("맞는 토큰은 통과", web.require_token(web.TOKEN) is None)
 check("화면에 토큰이 심어진다", web.TOKEN in web.index().body.decode("utf-8"))
+_page = web.index()
+_html = _page.body.decode("utf-8")
+check("화면 제목 옆에 버전이 심어진다", config.VERSION in _html and "__PM_VERSION__" not in _html)
+check("첫 화면은 캐시하지 않는다 (업데이트 뒤 옛 화면 방지)", _page.headers.get("cache-control") == "no-store")
 
 # ── 7. 파일 선택창 응답 해석 · 열기 명령 ──────────────────────────
 check("선택창 응답: 경로 목록", local._pick_result(0, '["C:\\\\a.pptx", "C:\\\\b.pptx"]\n', "") == ["C:\\a.pptx", "C:\\b.pptx"])
