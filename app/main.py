@@ -91,6 +91,7 @@ class Job:
     findings: list = field(default_factory=list)
     stats: dict = field(default_factory=dict)
     error: str = ""
+    log: list = field(default_factory=list)   # 슬라이드별 성적표 줄 ("슬라이드 3 분석 완료 · 2분 10초 · …")
     cancel: threading.Event = field(default_factory=threading.Event)  # 중단 신호
 
     def snapshot(self) -> dict:
@@ -106,6 +107,7 @@ class Job:
             "findings": self.findings,
             "stats": self.stats,
             "error": self.error,
+            "log": self.log,
             "out_path": str(self.out),
             "out_name": self.out.name,
             "out_dir": str(self.out.parent),
@@ -126,6 +128,8 @@ def _run(job: Job, opts: config.RunOptions) -> None:
         job.slide_done, job.slide_total = p.slide_done, p.slide_total
         if p.findings is not None:
             job.findings = p.findings
+        if "분석 완료 ·" in p.stage:          # 슬라이드 성적표는 다음 단계에 덮이지 않게 따로 모아 둔다
+            job.log.append(p.stage)
 
     try:
         job.status = "running"

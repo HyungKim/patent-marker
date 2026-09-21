@@ -15,9 +15,12 @@ pipeline.py ─ 파일 하나를 끝까지 처리하는 공통 흐름
                모델 호출 도중에도 analyze._chat 이 소켓을 끊어 즉시 멈춥니다 (Cancelled 예외).
   - 시간 제한 : 없습니다 (config.REQUEST_TIMEOUT=0). 느린 PC 에서 슬라이드 하나가 10분을 넘겨도
                끊지 않습니다. 대신 Ollama 프로세스가 사라지면 analyze 가 감지해 OllamaError 로 멈춥니다.
+  - 속도 기록 : 슬라이드마다 "입력/출력 토큰 · 초당 토큰" 을 progress 로 알리고, 파일 하나가 끝나면
+               review_data/run_log.tsv 에 한 줄을 남깁니다 (엑셀로 열림). 개선 전후를 숫자로 비교하는 근거.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import threading
 import time
 import traceback
@@ -26,6 +29,38 @@ from pathlib import Path
 from typing import Callable
 
 from . import analyze, config, extract, mark, merge, review
+
+RUN_LOG_COLUMNS = ["일시", "버전", "모델", "파일", "슬라이드", "모델호출", "입력토큰", "출력토큰",
+                   "읽기초", "쓰기초", "쓰기토큰/초", "총소요초", "후보", "A", "B", "C", "인용일치", "결과파일"]
+
+
+def speed_text(st: dict) -> str:
+    """집계 상자를 사람이 읽는 한 줄로. 예: '입력 2,187 / 출력 1,870 토큰 · 쓰기 9.3 토큰/초'"""
+    tps = st["output_tokens"] / st["output_sec"] if st.get("output_sec") else 0.0
+    return (f"입력 {st['prompt_tokens']:,} / 출력 {st['output_tokens']:,} 토큰"
+            + (f" · 쓰기 {tps:.1f} 토큰/초" if tps else ""))
+
+
+def _append_run_log(row: list) -> None:
+    """review_data/run_log.tsv 에 한 줄 추가. 실패해도 분석 결과에는 영향을 주지 않는다."""
+    try:
+        p = config.REVIEW_DIR / "run_log.tsv"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        header = "\t".join(RUN_LOG_COLUMNS)
+        new = not p.exists()
+        # 열이 늘어난 새 버전이면(예전 머리글과 다르면) 빈 줄 뒤에 새 머리글을 한 번 더 적는다 — 옛 줄과 섞이지 않게
+        stale = False
+        if not new:
+            with p.open("r", encoding="utf-8-sig") as f:
+                lines = f.read().splitlines()
+            last_header = next((ln for ln in reversed(lines) if ln.startswith("일시\t")), "")
+            stale = last_header != header
+        with p.open("a", encoding="utf-8-sig" if new else "utf-8", newline="") as f:
+            if new or stale:
+                f.write(("" if new else "\n") + header + "\n")      # BOM 을 붙여 엑셀이 한글을 바로 읽게
+            f.write("\t".join(str(v) for v in row) + "\n")
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
 
 
 class Cancelled(Exception):
@@ -56,6 +91,8 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
         if progress is not None:
             progress(Progress(stage, done, total, findings))
 
+    t_run = time.monotonic()
+
     # ── 1단계: PPTX 읽기 ──────────────────────────────────────
     report("문서 읽는 중")
     deck = extract.extract(str(src))
@@ -77,6 +114,7 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
 
     # ── 3단계: 슬라이드마다 온디바이스 모델에게 판정 요청 ──────
     all_findings: list[analyze.Finding] = []
+    run_stats = analyze.new_stats()                 # 파일 전체의 토큰·시간 집계 (속도 기록용)
     for slide_no in range(1, total + 1):
         if cancel is not None and cancel.is_set():
             raise Cancelled()
@@ -101,11 +139,18 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
                 report(f"슬라이드 {_n} 분석 중 (온디바이스 모델) · {sec // 60}분 {sec % 60:02d}초 경과 · {phase}",
                        _n - 1, total, _snap)
 
+            slide_stats = analyze.new_stats()
             try:
                 all_findings += analyze.analyze_slide(title, slide_no, total, segs, hints, opts,
-                                                      cancel=cancel, progress=alive)
+                                                      cancel=cancel, progress=alive, stats=slide_stats)
             except analyze.Aborted:
                 raise Cancelled()
+            analyze.add_stats(run_stats, slide_stats)
+            sec = int(time.monotonic() - t_slide)
+            # 슬라이드 하나의 성적표 — 회사 PC 의 실제 속도가 여기서 숫자로 드러난다
+            report(f"슬라이드 {slide_no} 분석 완료 · {sec // 60}분 {sec % 60:02d}초 · {speed_text(slide_stats)}",
+                   slide_no, total, [f.to_public() for f in all_findings])
+            continue
         report(f"슬라이드 {slide_no} 분석 완료", slide_no, total,
                [f.to_public() for f in all_findings])
 
@@ -133,6 +178,11 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
         counts[f.grade] = counts.get(f.grade, 0) + 1
         risk += 1 if f.disclosure_risk else 0
         implicit += 1 if f.implicit else 0
+    elapsed = time.monotonic() - t_run
+    tps = run_stats["output_tokens"] / run_stats["output_sec"] if run_stats["output_sec"] else 0.0
+    # 품질 지표 하나: 모델 인용구가 원문과 정확히 일치해 자리를 잡은 비율 (못 잡으면 문단 전체가 칠해진다)
+    llm_n = sum(1 for f in resolved if f.source == "llm")
+    located = sum(1 for f in resolved if f.source == "llm" and f.span is not None)
     summary = {
         **stats,
         "total": len(resolved),
@@ -140,6 +190,24 @@ def run(src: Path, dst: Path, opts: config.RunOptions,
         "disclosure_risk": risk,
         "implicit": implicit,
         "segments": len(deck.segments),
+        # 속도 성적표 (화면 결과 칸·명령행·실행 기록에 쓰임)
+        "model": opts.model,
+        "version": config.VERSION,
+        "seconds": round(elapsed, 1),
+        "calls": run_stats["calls"],
+        "prompt_tokens": run_stats["prompt_tokens"],
+        "output_tokens": run_stats["output_tokens"],
+        "prompt_sec": round(run_stats["prompt_sec"], 1),
+        "output_sec": round(run_stats["output_sec"], 1),
+        "tokens_per_sec": round(tps, 1),
+        "quote_located": f"{located}/{llm_n}",
+        "speed_text": f"{speed_text(run_stats)} · 총 {int(elapsed) // 60}분 {int(elapsed) % 60:02d}초",
     }
+    _append_run_log([
+        _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), config.VERSION, opts.model, src.name, total,
+        run_stats["calls"], run_stats["prompt_tokens"], run_stats["output_tokens"],
+        round(run_stats["prompt_sec"], 1), round(run_stats["output_sec"], 1), round(tps, 1),
+        round(elapsed, 1), len(resolved), counts["A"], counts["B"], counts["C"], f"{located}/{llm_n}", dst.name,
+    ])
     report("완료", total, total, [f.to_public() for f in resolved])
     return resolved, summary

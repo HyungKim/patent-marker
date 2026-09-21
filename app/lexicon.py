@@ -190,6 +190,23 @@ NOISE = re.compile(
     re.I,
 )
 
+# 특허 행정 상태 문구 ("특허 출원 0건", "지식재산 검토 미착수", "IP 현황").
+# 모델이 이런 문장을 '공개 관련정보' 로 오인해 돌려보내는 일이 잦다 (프롬프트로 금지해도 어김).
+# 위 RISK_PRIOR 규칙이 말하듯 특허 언급 자체는 공개가 아니므로, merge.py 가 이 문구에만 걸리고
+# 진짜 공개 신호(disclosure=True 규칙)는 없는 구간을 결과에서 뺀다.
+IP_STATUS = re.compile(
+    r"(?:특허|지식\s*재산|IP|지재권)\s*(?:출원|등록|검토|현황|담당|전략|건수|여부|미착수|예정)|"
+    r"출원\s*(?:0\s*건|없음|미착수|예정|이력|현황|여부)",
+    re.I,
+)
+
+
+def is_ip_status(text: str, span: tuple[int, int] | None = None) -> bool:
+    """인용 구간이 특허 행정 상태(출원 건수·검토 여부)를 말하는 문구인가."""
+    lo, hi = span if span else (0, len(text))
+    return bool(IP_STATUS.search(text[lo:hi]))
+
+
 # 기술적 실질을 담보하는 카테고리. 경영 단어가 있어도 이 신호가 같은 구간에 있으면
 # 곧바로 걸러내지 않습니다.
 TECHNICAL_CATEGORIES = {"구성·구조", "제어·알고리즘", "공정·방법"}

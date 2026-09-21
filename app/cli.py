@@ -66,8 +66,8 @@ def run_one(src: Path, out_dir: Path | None, opts: config.RunOptions) -> Path:
         if p.slide_total and p.slide_done != last["slide"]:
             last["slide"] = p.slide_done
             last["beat"] = time.time()
-            print(f"  슬라이드 {p.slide_done}/{p.slide_total} · 후보 {len(p.findings or [])}건 "
-                  f"({time.time() - t0:.0f}초)")
+            # "슬라이드 3 분석 완료 · 2분 10초 · 입력 2,187 / 출력 1,870 토큰 · 쓰기 9.3 토큰/초" 같은 성적표 줄
+            print(f"  {p.stage} · 후보 {len(p.findings or [])}건 ({p.slide_done}/{p.slide_total})")
         elif "경과" in p.stage and time.time() - last["beat"] >= 60:
             last["beat"] = time.time()          # 시간 제한이 없으므로 1분마다 살아 있음을 보여 준다
             print(f"    … {p.stage}")
@@ -76,6 +76,9 @@ def run_one(src: Path, out_dir: Path | None, opts: config.RunOptions) -> Path:
     g = stats.get("grades", {})
     print(f"  완료 — 후보 {stats.get('total', 0)}건 "
           f"(A {g.get('A', 0)} · B {g.get('B', 0)} · C {g.get('C', 0)}) · {time.time() - t0:.0f}초")
+    if stats.get("speed_text"):
+        print(f"  속도: {stats['speed_text']} · 모델 호출 {stats.get('calls', 0)}회 · "
+              f"인용구 일치 {stats.get('quote_located', '')}  (review_data\\run_log.tsv 에 기록됨)")
     print(f"  저장: {dst}")
     return dst
 

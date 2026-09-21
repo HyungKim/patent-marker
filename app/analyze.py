@@ -17,9 +17,14 @@ analyze.py ─ 온디바이스 LLM(Ollama + Qwen3) 에게 판정을 맡기는 2�
   - 네트워크 호출은 127.0.0.1 의 Ollama 로만 나갑니다. 외부로 나가는 요청은 없습니다.
 
 [속도에 대하여]
-  슬라이드 한 장에 50~150초가 걸리는 이유는 모델이 답을 "한 글자(토큰)씩" 만들기 때문입니다.
-  토큰 하나마다 모델 가중치(약 9GB)를 메모리에서 전부 읽어야 해서,
-  속도는 CPU 연산력보다 **메모리 대역폭** 에 좌우됩니다. 코드 최적화로는 거의 줄지 않습니다.
+  슬라이드 한 장에 몇 분이 걸리는 이유는 모델이 답을 "한 글자(토큰)씩" 만들기 때문입니다.
+  토큰 하나마다 모델 가중치(qwen3:8b 약 5GB)를 메모리에서 전부 읽어야 해서,
+  속도는 CPU 연산력보다 **메모리 대역폭** 에 좌우됩니다. 실측(예시 문서 5장)으로 시간의 9할이
+  '답을 쓰는' 시간이었으므로, 이 도구는 **답을 짧게** 받도록 설계했습니다 (2026-09-21):
+    · JSON 키를 한 글자(i·q·g·c·d·r)로, 판정 사유는 12자 이내, 인용구는 25자 이내
+    · '묵시적 표현인가' 는 모델에게 묻지 않고 분류(config.IMPLICIT_CATEGORIES)로 정함
+    · 같은 문단·같은 유형은 한 건만, C(기술적 실질 없음)는 반환하지 않음
+  모델이 보낸 토큰 수와 초당 속도는 analyze_slide(stats=) 로 집계되어 화면·실행 기록에 남습니다.
 """
 from __future__ import annotations
 
@@ -44,6 +49,10 @@ THINK_TAG = re.compile(r"<think>.*?</think>", re.S | re.I)
 # ═════════════════════════════════════════════════════════════════
 # 모델 답변의 형식(JSON 스키마)
 # ═════════════════════════════════════════════════════════════════
+# 키를 한 글자로 둔 이유: 모델이 답을 한 토큰씩 쓰므로 키 이름도 매 건 시간을 먹는다.
+# 예시 문서 실측에서 한 건에 약 120 토큰 중 절반이 키 이름·상투적 사유·중복 플래그였다.
+#   i = 문단 번호   q = 원문 인용구   g = 등급(A/B/C)   c = 분류   d = 공개 관련 문장인가   r = 사유(짧게)
+# 옛 형식(seg_id, quote, grade, category, implicit, disclosure_risk, reason)도 _norm_item 이 그대로 받는다.
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -52,23 +61,36 @@ SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "seg_id": {"type": "integer"},                       # 어느 문단인가
-                    "quote": {"type": "string"},                         # 원문 그대로의 인용구
-                    "grade": {"type": "string", "enum": ["A", "B", "C"]},
-                    "category": {"type": "string", "enum": config.CATEGORIES},
-                    "implicit": {"type": "boolean"},                     # 묵시적 표현인가
-                    "disclosure_risk": {"type": "boolean"},              # 이미 공개된 내용인가
-                    "reason": {"type": "string"},                        # 판정 근거 한 문장
+                    "i": {"type": "integer"},                            # 어느 문단인가 (#번호)
+                    "q": {"type": "string"},                             # 원문 그대로의 인용구
+                    "g": {"type": "string", "enum": ["A", "B", "C"]},    # 등급
+                    "c": {"type": "string", "enum": config.CATEGORIES},  # 분류
+                    "d": {"type": "boolean"},                            # 공개 관련 문장인가
+                    "r": {"type": "string"},                             # 판정 사유 (12자 이내)
                 },
-                "required": [
-                    "seg_id", "quote", "grade", "category",
-                    "implicit", "disclosure_risk", "reason",
-                ],
+                "required": ["i", "q", "g", "c", "d", "r"],
             },
         }
     },
     "required": ["findings"],
 }
+
+# 모델 답 한 건을 내부 이름으로 맞춘다. 새 형식(한 글자 키)과 옛 형식 모두 받는다.
+_KEY_ALIASES = {
+    "seg_id": ("i", "seg_id"), "quote": ("q", "quote"), "grade": ("g", "grade"),
+    "category": ("c", "category"), "disclosure_risk": ("d", "disclosure_risk"),
+    "reason": ("r", "reason"), "implicit": ("m", "implicit"),
+}
+
+
+def _norm_item(item: dict) -> dict:
+    out = {}
+    for name, keys in _KEY_ALIASES.items():
+        for k in keys:
+            if k in item:
+                out[name] = item[k]
+                break
+    return out
 
 # ═════════════════════════════════════════════════════════════════
 # 모델에게 주는 업무 지시서 (시스템 프롬프트)
@@ -96,8 +118,9 @@ SYSTEM = """당신은 한국 기업의 내부 기술 보고자료를 읽고 특�
 
 ## 공개 관련정보
 전시·시연, 논문·학회 발표, 보도자료, 고객사 제안서 제출, 양산·출시처럼 기술이 외부에 드러났거나 드러날 예정임을 뜻하는 문장은
-disclosure_risk 를 true 로 둔다. 이렇게 표시된 구간은 결과에서 C(공개 관련정보) 로 안내되며,
-공개 전에 출원을 끝냈어야 하는 대상이다.
+d 를 true 로 둔다. 이렇게 표시된 구간은 결과에서 C(공개 관련정보) 로 안내되며,
+공개 전에 출원을 끝냈어야 하는 대상이다. 그 밖의 문장은 d 를 false 로 둔다.
+"특허 출원 0건", "출원 미착수", "IP 검토 예정" 처럼 **특허 행정 상태**를 말하는 문장은 공개가 아니다 — 반환하지 마라.
 
 ## 마킹하지 않을 것 (중요)
 아래는 숫자가 붙어 있어도 기술적 실질이 없으므로 반환하지 마라. 억지로 "기술이 있음을 시사한다"고 해석하지 마라.
@@ -110,12 +133,15 @@ disclosure_risk 를 true 로 둔다. 이렇게 표시된 구간은 결과에서 
 효과만 기재된 문장을 마킹하라는 원칙은 **공정·장치·제어의 물리적 성능**에 적용된다
 (불량률, 정밀도, 처리 속도, 수율, 두께 편차, 검출 한계 등). 재무 지표에는 적용하지 않는다.
 
-## 출력 규칙
-- quote 는 반드시 해당 문단 원문에 **그대로 존재하는 연속된 부분 문자열**이어야 한다. 요약하거나 고쳐 쓰지 말 것.
-- quote 는 핵심 어구만 짧게 잡는다. 문단 전체를 그대로 넣지 않는다.
-- reason 은 왜 특허 관점에서 의미가 있는지 한 문장으로 쓴다. 한국어로 쓴다.
-- 한 문단에서 서로 다른 근거가 있으면 여러 건으로 나누어 반환한다.
-- JSON 만 출력한다."""
+## 출력 규칙 (답은 짧을수록 좋다 — 한 글자마다 시간이 든다)
+JSON 한 개만 출력한다: {"findings": [{"i": 문단 번호, "q": 인용구, "g": 등급, "c": 분류, "d": 공개 여부, "r": 사유}, ...]}
+- i : 문단 앞의 # 번호 (숫자만).
+- q : 반드시 해당 문단 원문에 **그대로 존재하는 연속된 부분 문자열**. 요약하거나 고쳐 쓰지 말 것.
+      핵심 어구만 **25자 이내**로 짧게 잡는다. 문장 전체를 넣지 않는다.
+- g : A 또는 B. C(기술적 실질 없음)는 반환하지 않는다 — 단 공개 관련 문장은 d:true 로 반환한다.
+- c : 분류 이름 하나.
+- r : 특허 관점의 근거를 **12자 이내** 핵심어로만 쓴다. 예: "수단 없는 효과 수치", "독자 설계 주장", "학회 발표 이력". 문장으로 풀어 쓰지 않는다.
+- 한 문단에 서로 **다른 분류**의 근거가 있으면 건을 나누고, **같은 분류**의 근거가 여럿이면 가장 대표적인 것 한 건만 반환한다."""
 
 
 def _system_prompt() -> str:
@@ -415,15 +441,32 @@ def _batch(segs: list[Segment], max_chars: int) -> list[list[Segment]]:
 # ═════════════════════════════════════════════════════════════════
 # 진입점
 # ═════════════════════════════════════════════════════════════════
+def new_stats() -> dict:
+    """모델 호출 집계 상자. analyze_slide(stats=) 에 넘기면 호출마다 더해진다.
+
+    prompt_tokens / output_tokens : 모델이 읽은 토큰 · 쓴 토큰 (Ollama 가 세어 준 값)
+    prompt_sec / output_sec       : 읽는 데 · 쓰는 데 걸린 초
+    calls                         : 모델 호출 횟수
+    """
+    return {"prompt_tokens": 0, "output_tokens": 0, "prompt_sec": 0.0, "output_sec": 0.0, "calls": 0}
+
+
+def add_stats(total: dict, part: dict) -> None:
+    for k in ("prompt_tokens", "output_tokens", "prompt_sec", "output_sec", "calls"):
+        total[k] = total.get(k, 0) + part.get(k, 0)
+
+
 def analyze_slide(deck_title: str, slide_no: int, total: int,
                   segs: list[Segment], hints: dict[int, list[str]],
                   opts: config.RunOptions,
                   cancel: threading.Event | None = None,
-                  progress: ProgressFn | None = None) -> list[Finding]:
+                  progress: ProgressFn | None = None,
+                  stats: dict | None = None) -> list[Finding]:
     """슬라이드 한 장을 분석한다. pipeline.py 가 슬라이드마다 이 함수를 부른다.
 
     cancel   : '중단' 신호. 켜지면 진행 중인 모델 호출을 끊고 Aborted 를 올린다.
     progress : 지금까지 받은 답변 글자 수를 알리는 콜백 (화면의 "살아 있음" 표시용).
+    stats    : new_stats() 로 만든 집계 상자. 넘기면 토큰 수·소요 초가 더해진다 (속도 기록용).
     """
     if not segs:
         return []
@@ -434,7 +477,7 @@ def analyze_slide(deck_title: str, slide_no: int, total: int,
     out: list[Finding] = []
     for chunk in _batch(segs, budget):
         out += _analyze_batch(deck_title, slide_no, total, chunk, hints, opts,
-                              cancel=cancel, progress=progress)
+                              cancel=cancel, progress=progress, stats=stats)
     return out
 
 
@@ -443,7 +486,8 @@ def _analyze_batch(deck_title: str, slide_no: int, total: int,
                    opts: config.RunOptions,
                    system_override: str | None = None,
                    cancel: threading.Event | None = None,
-                   progress: ProgressFn | None = None) -> list[Finding]:
+                   progress: ProgressFn | None = None,
+                   stats: dict | None = None) -> list[Finding]:
     """문단 묶음 하나를 Ollama 에 보내고 Finding 목록으로 바꾼다. ← 모델을 실제로 부르는 곳
 
     system_override 는 성능 측정(evaluate.py)이 "최초 설정 프롬프트" 로
@@ -465,11 +509,20 @@ def _analyze_batch(deck_title: str, slide_no: int, total: int,
     }
     data = _chat(payload, cancel=cancel, progress=progress)
     raw = (data.get("message") or {}).get("content", "")
+    if stats is not None:                         # Ollama 가 마지막 조각에 세어 보내는 토큰 수·소요 시간
+        stats["prompt_tokens"] += int(data.get("prompt_eval_count") or 0)
+        stats["output_tokens"] += int(data.get("eval_count") or 0)
+        stats["prompt_sec"] += (data.get("prompt_eval_duration") or 0) / 1e9
+        stats["output_sec"] += (data.get("eval_duration") or 0) / 1e9
+        stats["calls"] += 1
 
     # 모델 답을 검증하면서 Finding 으로 바꾼다 (엉뚱한 seg_id, 등급 값 등은 보정)
     valid_ids = {s.seg_id: s for s in segs}
     out: list[Finding] = []
-    for item in _parse(raw):
+    for raw_item in _parse(raw):
+        if not isinstance(raw_item, dict):
+            continue
+        item = _norm_item(raw_item)
         try:
             sid = int(item.get("seg_id"))
         except (TypeError, ValueError):
@@ -478,12 +531,14 @@ def _analyze_batch(deck_title: str, slide_no: int, total: int,
         if seg is None:
             continue
         quote = (item.get("quote") or "").strip()
-        grade = (item.get("grade") or "C").upper()
+        grade = str(item.get("grade") or "C").upper()
         if grade not in ("A", "B", "C"):
             grade = "C"
         cat = item.get("category") or "블랙박스용어"
         if cat not in config.CATEGORIES:
             cat = "블랙박스용어"
+        # 묵시 여부는 모델에게 묻지 않고 분류로 정한다 (옛 형식 답에 값이 있으면 그 값을 존중)
+        implicit = item["implicit"] if "implicit" in item else (cat in config.IMPLICIT_CATEGORIES)
         out.append(
             Finding(
                 seg_id=sid,
@@ -491,9 +546,9 @@ def _analyze_batch(deck_title: str, slide_no: int, total: int,
                 quote=quote,
                 grade=grade,
                 category=cat,
-                implicit=bool(item.get("implicit")),
+                implicit=bool(implicit),
                 disclosure_risk=bool(item.get("disclosure_risk")),
-                reason=(item.get("reason") or "").strip(),
+                reason=str(item.get("reason") or "").strip(),
                 source="llm",
             )
         )

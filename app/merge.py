@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from . import lexicon
+from . import config, lexicon
 from .analyze import Finding
 from .extract import Deck, Segment
 
@@ -113,6 +113,13 @@ def resolve(deck: Deck, findings: list[Finding],
         if f.span is None:
             # 인용구를 찾지 못하면 문단 전체를 칠하고, 인용구는 원문으로 교체한다
             f.quote = seg.text
+        # 모델이 "특허 출원 0건 · 검토 미착수" 같은 특허 행정 상태를 '공개' 로 돌려보내면 뺀다.
+        # 규칙 사전의 진짜 공개 신호(전시·논문·출시…)가 같은 구간에 있으면 그대로 둔다.
+        if (f.disclosure_risk and f.source == "llm"
+                and lexicon.is_ip_status(seg.text, f.span)
+                and not any(h.disclosure and not (h.span[1] <= f.span[0] or h.span[0] >= f.span[1])
+                            for h in hits_by_seg.get(f.seg_id, []) if f.span)):
+            continue
         # 재무·조직 지표에 "효과만 기재" 원칙을 확대 적용한 판정은 등급을 내린다.
         # 모델이 재현율을 높이라는 지시를 매출·이익률까지 밀고 나가는 경향이 있다.
         if not f.disclosure_risk and lexicon.is_business_noise(
@@ -145,10 +152,7 @@ def resolve(deck: Deck, findings: list[Finding],
                 quote=seg.text[wide[0]:wide[1]].strip(),
                 grade="B",
                 category=top.category,
-                implicit=top.category in (
-                    "효과만기재", "독자성주장", "최적화·조건확립",
-                    "문제해결", "비교우위", "블랙박스용어",
-                ),
+                implicit=top.category in config.IMPLICIT_CATEGORIES,   # 모델 답과 같은 기준
                 disclosure_risk=risky,
                 reason=f"{top.hint} (규칙 사전 감지 · 모델 미판정 구간)",
                 source="lexicon",
