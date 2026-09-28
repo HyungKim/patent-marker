@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import analyze, config, extract, mark, memory, merge, review
+from . import analyze, config, extract, mark, memory, merge, pdfdoc, review
 
 RUN_LOG_COLUMNS = ["일시", "버전", "모델", "파일", "슬라이드", "모델호출", "입력토큰", "출력토큰",
                    "읽기초", "쓰기초", "쓰기토큰/초", "총소요초", "후보", "A", "B", "C", "인용일치", "학습", "결과파일"]
@@ -213,11 +213,15 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
     except Exception:  # noqa: BLE001
         traceback.print_exc()
 
-    # ── 5단계: PPTX 에 마킹하고 저장 ──────────────────────────
-    report("PPTX 마킹 중", total, total, [f.to_public() for f in resolved])
-    stats = mark.apply(deck, resolved, marks, tag_marks=opts.tag_marks)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    deck.prs.save(str(dst))
+    # ── 5단계: PPTX(또는 PDF)에 마킹하고 저장 ─────────────────
+    if isinstance(deck, pdfdoc.PdfDeck):
+        report("PDF 마킹 중", total, total, [f.to_public() for f in resolved])
+        stats = pdfdoc.apply_and_save(deck, resolved, marks, dst, tag_marks=opts.tag_marks)
+    else:
+        report("PPTX 마킹 중", total, total, [f.to_public() for f in resolved])
+        stats = mark.apply(deck, resolved, marks, tag_marks=opts.tag_marks)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        deck.prs.save(str(dst))
 
     # ── 집계 ──────────────────────────────────────────────────
     counts = {"A": 0, "B": 0, "C": 0}

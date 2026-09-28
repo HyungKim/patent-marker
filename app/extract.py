@@ -130,8 +130,14 @@ def _emit_text_frame(tf, slide_no, kind, addr_prefix, counter, out,
         )
 
 
-def extract(path: str) -> Deck:
-    """PPTX 파일 경로를 받아 Deck(문단 목록) 을 돌려준다. 이 파일의 진입점."""
+def extract(path: str):
+    """PPTX(또는 PDF) 파일 경로를 받아 Deck(문단 목록) 을 돌려준다. 이 파일의 진입점.
+
+    .pdf 면 pdfdoc.extract 로 넘긴다 — 돌려주는 PdfDeck 도 segments·slide_count 를 갖고 있어 뒤 단계는 같다.
+    """
+    if str(path).lower().endswith(".pdf"):
+        from . import pdfdoc
+        return pdfdoc.extract(str(path))
     prs = Presentation(path)
     segments: list[Segment] = []
     counter = [0]

@@ -31,9 +31,10 @@ def main() -> int:
     root.update()
 
     kw = dict(parent=root, initialdir=start,
-              filetypes=[("PowerPoint 파일", "*.pptx *.potx"), ("모든 파일", "*.*")])
+              filetypes=[("보고서 파일 (PPTX·PDF)", "*.pptx *.potx *.pdf"), ("PowerPoint 파일", "*.pptx *.potx"),
+                         ("PDF 파일", "*.pdf"), ("모든 파일", "*.*")])
     if multiple:
-        picked = root.tk.splitlist(filedialog.askopenfilenames(title="검토완료 PPTX 선택 (여러 개 가능)", **kw))
+        picked = root.tk.splitlist(filedialog.askopenfilenames(title="검토완료 파일 선택 — PPTX·PDF (여러 개 가능)", **kw))
     else:
         one = filedialog.askopenfilename(title="분석할 PPTX 선택", **kw)
         picked = [one] if one else []

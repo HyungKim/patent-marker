@@ -6,7 +6,7 @@ review.py ─ 검토완료본을 읽어 "사람의 교정" 을 학습 재료로 
   사람이 PowerPoint 에서 형광펜을 고쳐 놓은 '검토완료본' 을 읽어,
   도구가 원래 내렸던 판정(분석 때 자동 저장해 둔 기록)과 비교합니다.
 
-      검토완료 PPTX ──▶ read_reviewed() ──▶ diff() ──▶ 교정 내역
+      검토완료 PPTX·PDF ──▶ read_reviewed() ──▶ diff() ──▶ 교정 내역
                                                         ├─ 누락   : 사람이 새로 칠함 (모델이 놓침)
                                                         ├─ 오탐   : 사람이 지움     (모델이 잘못 잡음)
                                                         ├─ 등급변경: 색을 바꿈
@@ -22,7 +22,7 @@ review.py ─ 검토완료본을 읽어 "사람의 교정" 을 학습 재료로 
                           개선 타임라인에서 측정 결과와 함께 계속 볼 수 있습니다.
 
 [검토자의 형광펜 색 규약]
-  노랑 계열 = A (구체 수단 드러남) · 하늘/파랑 계열 = B (묵시) · 살구/빨강 계열 = C (공개 관련정보)
+  노랑 계열 = A (구체 수단 드러남) · 청록/하늘/파랑 계열 = B (묵시) · 빨강/분홍/살구 계열 = C (공개 관련정보)
   PowerPoint 기본 형광펜 색을 써도 됩니다 — 정확한 색이 아니라 색 계열(색상환 거리)로 판정합니다.
   형광펜을 지우면 "후보 아님", 색을 바꾸면 "등급 정정" 입니다.
 
@@ -62,9 +62,13 @@ BADGE_RE = re.compile(                                                # 예전 �
     "^(?:" + "|".join(re.escape(t) for t in config.LEGACY_BADGE_TEXTS) + r")\s*\d+\s*건$"
 )
 
-# 색 계열 → 등급 판정용 기준 색상각(hue). GRADE_COLOR 에서 유도한 값.
-#   A=FFD54F(노랑, 46°) · B=9FD8F5(하늘, 203°) · R=FF9E80(살구, 14°)
-_HUE_ANCHOR = {"A": 46.0, "B": 203.0, "R": 14.0}
+# 색 계열 → 등급 판정용 기준 색상각(hue). 같은 등급에 기준을 여럿 둘 수 있다 — 새 기본색과 예전 기본색,
+# PowerPoint 형광펜 기본색을 모두 덮도록 잡았다 (검토자가 어느 색을 골라도 계열만 맞으면 된다).
+#   A 52°  = 노랑 계열   (새 FFFF00 60° · 예전 FFD54F 46° · 주황 FFC000 45°)
+#   B 190° = 청록·하늘·파랑 (새 00FFFF 180° · 예전 9FD8F5 203° · 파랑 0000FF 240°)
+#   R 10°  = 빨강·살구   (새 FF5050 0° · 예전 FF9E80 14°)          → C(공개 관련정보)
+#   R 320° = 분홍·자주   (FF00FF 300° · FF66CC 320°)                → C(공개 관련정보)
+_HUE_ANCHORS = (("A", 52.0), ("B", 190.0), ("R", 10.0), ("R", 320.0))
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -186,10 +190,9 @@ def color_to_grade(hexv: str) -> tuple[str, bool]:
     if s < 0.15:                       # 회색·검정 등 무채색 → 기본 B(발굴 후보)
         return "B", False
     hue = h * 360
-    best = min(_HUE_ANCHOR, key=lambda k: min(abs(hue - _HUE_ANCHOR[k]),
-                                              360 - abs(hue - _HUE_ANCHOR[k])))
+    best = min(_HUE_ANCHORS, key=lambda a: min(abs(hue - a[1]), 360 - abs(hue - a[1])))[0]
     if best == "R":
-        return "B", True               # 살구/빨강 = C(공개 관련정보) 색
+        return "B", True               # 빨강/분홍/살구 = C(공개 관련정보) 색
     return best, False
 
 
@@ -245,7 +248,10 @@ def _para_review(p_el) -> tuple[str, list[dict], list[int]]:
 
 
 def read_reviewed(path: str) -> dict:
-    """검토완료 PPTX 를 읽어 문단별 형광펜 정보와 지문을 돌려준다."""
+    """검토완료 PPTX(또는 PDF)를 읽어 문단별 형광펜 정보와 지문을 돌려준다."""
+    if str(path).lower().endswith(".pdf"):
+        from . import pdfdoc
+        return pdfdoc.read_reviewed(str(path))
     prs = Presentation(path)
     paras: list[dict] = []
     texts_for_fp: list[str] = []
@@ -425,8 +431,8 @@ def preview_many(named_paths: list[tuple[str, str]]) -> list[dict]:
     out: list[dict] = []
     seen: dict[str, str] = {}          # 지문 → 먼저 온 파일 이름
     for name, path in named_paths:
-        if not name.lower().endswith(".pptx"):
-            out.append({"filename": name, "error": "PPTX 파일만 지원합니다."})
+        if not name.lower().endswith((".pptx", ".pdf")):
+            out.append({"filename": name, "error": "PPTX 또는 PDF 파일만 지원합니다."})
             continue
         try:
             result = diff(read_reviewed(path))

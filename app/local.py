@@ -15,7 +15,7 @@ local.py ─ 브라우저 업로드 없이 파일을 받는 통로
   결과는 patent_marker\\output\\ 에 바로 저장됩니다 (다운로드가 막혀 있어도 됨).
 
 [안전장치]
-  - 경로로 받는 기능은 .pptx/.potx 파일만 허용합니다.
+  - 경로로 받는 기능은 .pptx/.potx/.pdf 파일만 허용합니다.
   - 서버는 127.0.0.1 전용이고, 이 기능들은 화면이 발급한 토큰(main.py)이 있어야 부를 수 있어
     브라우저의 다른 탭이 몰래 호출하지 못합니다.
 """
@@ -34,7 +34,7 @@ from urllib.parse import unquote
 
 from . import config
 
-PPTX_SUFFIXES = (".pptx", ".potx")
+PPTX_SUFFIXES = (".pptx", ".potx", ".pdf")     # 이름은 그대로 두었지만 PDF(파워포인트 변환본)도 받는다
 
 # 파일 선택창은 한 번에 하나만 (두 개가 겹쳐 뜨면 사용자가 헷갈린다)
 _PICK_LOCK = threading.Lock()
@@ -121,7 +121,7 @@ def resolve_pptx(raw: str) -> Path:
     if not p.is_file():
         raise ValueError(f"파일을 찾을 수 없습니다: {p}")
     if not _is_pptx(p):
-        raise ValueError("PPTX 파일만 지원합니다. (.ppt 는 PowerPoint 에서 .pptx 로 저장한 뒤 사용하세요)")
+        raise ValueError("PPTX 또는 PDF 파일만 지원합니다. (.ppt 는 PowerPoint 에서 .pptx 로 저장한 뒤 사용하세요)")
     return p
 
 
@@ -137,10 +137,11 @@ def output_path_for(src_name: str, out_dir: Path | None = None) -> Path:
     folder = out_dir or config.OUTPUT_DIR
     folder.mkdir(parents=True, exist_ok=True)
     stem = Path(src_name).stem or "deck"
-    cand = folder / f"{stem}_특허마킹.pptx"
+    ext = ".pdf" if Path(src_name).suffix.lower() == ".pdf" else ".pptx"   # PDF 는 PDF 로 돌려준다
+    cand = folder / f"{stem}_특허마킹{ext}"
     n = 2
     while cand.exists():
-        cand = folder / f"{stem}_특허마킹({n}).pptx"
+        cand = folder / f"{stem}_특허마킹({n}){ext}"
         n += 1
     return cand
 

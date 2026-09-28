@@ -3,11 +3,12 @@ cli.py ─ 브라우저 없이 명령행(또는 mark.bat 끌어다 놓기)으로
 =====================================================================
 
     python -m app.cli 보고서.pptx                    → 보고서_특허마킹.pptx (원본 옆)
+    python -m app.cli 보고서.pdf                     → 보고서_특허마킹.pdf  (PPT 를 PDF 로 변환한 자료도 그대로)
     python -m app.cli a.pptx b.pptx --out C:\\결과    → 지정한 폴더에 저장
     python -m app.cli 보고서.pptx --tag              → 【출원검토필요】 문구도 표시 (흑백 인쇄용)
     python -m app.cli 보고서.pptx --fast             → 빠름 모델(qwen3:4b-instruct)로 초벌 — 약 3배 빠름, 후보는 덜 잡힘
 
-  Windows 에서는 mark.bat 아이콘 위에 PPTX 를 끌어다 놓으면 이 파일이 실행됩니다.
+  Windows 에서는 mark.bat 아이콘 위에 PPTX·PDF 를 끌어다 놓으면 이 파일이 실행됩니다.
   Ollama 가 떠 있어야 합니다 (run.bat / mark.bat 이 자동으로 켭니다).
 
 [결과 저장 위치]
@@ -27,8 +28,8 @@ from . import analyze, config, local, pipeline
 def _parse(argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         prog="python -m app.cli",
-        description="PPTX 를 읽어 특허 출원 검토가 필요한 구간을 형광펜으로 표시합니다.")
-    ap.add_argument("files", nargs="+", help="분석할 PPTX 파일 (여러 개 가능)")
+        description="PPTX·PDF 를 읽어 특허 출원 검토가 필요한 구간을 형광펜으로 표시합니다.")
+    ap.add_argument("files", nargs="+", help="분석할 PPTX 또는 PDF 파일 (여러 개 가능)")
     ap.add_argument("--out", metavar="폴더", help="결과를 저장할 폴더 (기본: 원본 옆)")
     ap.add_argument("--tag", action="store_true", help="형광펜 뒤에 【출원검토필요】 문구도 표시")
     ap.add_argument("--think", action="store_true", help="추론 모드 (정확도↑ 속도↓)")

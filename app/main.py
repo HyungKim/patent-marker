@@ -19,11 +19,11 @@ main.py ─ 웹 서버 (프로그램의 "현관문")
       POST /api/jobs               파일 업로드 → 분석 시작 (job_id 반환)
       GET  /api/jobs/{id}          진행 상황 + 지금까지 찾은 후보
       POST /api/jobs/{id}/cancel   중단
-      GET  /api/jobs/{id}/download 마킹된 PPTX 내려받기
+      GET  /api/jobs/{id}/download 마킹된 PPTX·PDF 내려받기
       DELETE /api/jobs/{id}        작업 기록 삭제
 
   브라우저 업로드가 막힌 PC 를 위한 통로 (app/local.py 참고, 화면 토큰 필요):
-      GET  /api/local/files            input · output 폴더의 PPTX 목록
+      GET  /api/local/files            input · output 폴더의 PPTX·PDF 목록
       POST /api/local/jobs             {path} 경로의 파일로 분석 시작
       POST /api/local/pick             파이썬이 파일 선택창을 띄움 → {paths}
       POST /api/local/open             탐색기로 폴더 열기
@@ -34,7 +34,7 @@ main.py ─ 웹 서버 (프로그램의 "현관문")
   /api/jobs/{id} 를 물어보며 진행률을 갱신합니다. (index.html 의 poll() 참고)
 
 [결과가 저장되는 곳]
-  어느 방법으로 넣었든 결과는 output 폴더에  이름_특허마킹.pptx  로 저장됩니다.
+  어느 방법으로 넣었든 결과는 output 폴더에  이름_특허마킹.pptx (PDF 는 .pdf) 로 저장됩니다.
   다운로드 버튼은 같은 파일을 브라우저로 내려 주는 것뿐입니다.
 """
 from __future__ import annotations
@@ -240,10 +240,10 @@ async def create_job(
     """파일 업로드를 받아 임시 폴더에 저장하고, 분석 스레드를 시작한다."""
     name = file.filename or "deck.pptx"
     if not name.lower().endswith(local.PPTX_SUFFIXES):
-        raise HTTPException(400, "PPTX 파일만 지원합니다. (.ppt 는 먼저 .pptx 로 변환하세요)")
+        raise HTTPException(400, "PPTX 또는 PDF 파일만 지원합니다. (.ppt 는 먼저 .pptx 로 변환하세요)")
 
     workdir = Path(tempfile.mkdtemp(prefix="pm-up-"))   # OS 임시 폴더 아래
-    src = workdir / "input.pptx"
+    src = workdir / ("input.pdf" if name.lower().endswith(".pdf") else "input.pptx")   # 확장자로 PDF/PPTX 를 가른다
     with src.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
 
@@ -272,13 +272,14 @@ def job_cancel(job_id: str) -> JSONResponse:
 
 @app.get("/api/jobs/{job_id}/download")
 def job_download(job_id: str):
-    """마킹된 PPTX 파일 내려받기 (output 폴더에 저장된 것과 같은 파일)."""
+    """마킹된 PPTX·PDF 파일 내려받기 (output 폴더에 저장된 것과 같은 파일)."""
     job = JOBS.get(job_id)
     if job is None or job.status != "done" or not job.out.exists():
         raise HTTPException(404, "다운로드할 결과가 아직 없습니다.")
     return FileResponse(
         str(job.out),
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        media_type=("application/pdf" if job.out.suffix.lower() == ".pdf"
+                    else "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
         filename=job.out.name,
     )
 
@@ -299,7 +300,7 @@ def job_delete(job_id: str) -> JSONResponse:
 # ═════════════════════════════════════════════════════════════════
 @app.get("/api/local/files", dependencies=[Depends(require_token)])
 def local_files() -> JSONResponse:
-    """input · output 폴더의 PPTX 목록과 폴더 위치. 화면의 목록·안내문이 쓴다."""
+    """input · output 폴더의 PPTX·PDF 목록과 폴더 위치. 화면의 목록·안내문이 쓴다."""
     local.ensure_dirs()
     return JSONResponse({
         "input_dir": str(config.INPUT_DIR),
@@ -359,7 +360,7 @@ def local_review_preview(payload: dict = Body(...)) -> JSONResponse:
     """{paths: [경로, …]} 의 검토완료본을 읽어 파일별 교정 내역을 계산한다 (저장은 안 함)."""
     raws = [str(p) for p in (payload.get("paths") or []) if str(p).strip()]
     if not raws:
-        raise HTTPException(400, "검토완료 PPTX 경로를 하나 이상 넣어 주세요.")
+        raise HTTPException(400, "검토완료 PPTX·PDF 경로를 하나 이상 넣어 주세요.")
     named: list[tuple[str, str]] = []
     bad: list[dict] = []
     for raw in raws:
@@ -378,7 +379,7 @@ def local_review_preview(payload: dict = Body(...)) -> JSONResponse:
 @app.post("/api/review/preview")
 async def review_preview(files: list[UploadFile] = File(default=[]),
                          file: UploadFile | None = File(default=None)) -> JSONResponse:
-    """검토완료 PPTX(여러 개 가능)를 받아 파일별 교정 내역을 계산해 돌려준다.
+    """검토완료 PPTX·PDF(여러 개 가능)를 받아 파일별 교정 내역을 계산해 돌려준다.
 
     아직 아무것도 저장하지 않는다 — 화면에서 [반영 저장] 을 눌러야 기록된다.
     한 파일이 깨져 있거나 같은 문서가 겹쳐도 나머지 파일은 정상 처리된다.
@@ -386,12 +387,13 @@ async def review_preview(files: list[UploadFile] = File(default=[]),
     """
     ups = list(files) + ([file] if file is not None else [])
     if not ups:
-        raise HTTPException(400, "PPTX 파일을 올려 주세요.")
+        raise HTTPException(400, "검토완료 PPTX 또는 PDF 파일을 올려 주세요.")
     workdir = Path(tempfile.mkdtemp(prefix="pm-review-"))
     try:
         named: list[tuple[str, str]] = []
         for n, up in enumerate(ups):
-            tmp = workdir / f"r{n}.pptx"
+            ext = ".pdf" if (up.filename or "").lower().endswith(".pdf") else ".pptx"
+            tmp = workdir / f"r{n}{ext}"
             with tmp.open("wb") as fh:
                 shutil.copyfileobj(up.file, fh)
             named.append((up.filename or f"reviewed{n}.pptx", str(tmp)))
