@@ -62,7 +62,7 @@ else
   .venv/bin/python -m pip install --upgrade pip >/dev/null 2>&1
   .venv/bin/python -m pip install -r requirements.txt || die "라이브러리 설치 실패 ─ 인터넷 연결을 확인하세요"
 fi
-.venv/bin/python -c "import pptx, fastapi, uvicorn, multipart" || die "라이브러리 확인 실패"
+.venv/bin/python -c "import pptx, fastapi, uvicorn, multipart, pdfminer, pypdf" || die "라이브러리 확인 실패"
 ok "라이브러리 설치 완료"
 
 # ── 3. Ollama ─────────────────────────────────────────────────

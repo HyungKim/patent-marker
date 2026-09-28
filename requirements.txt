@@ -6,3 +6,6 @@ lxml==6.1.1
 fastapi==0.141.1
 uvicorn==0.52.3
 python-multipart==0.0.32
+# PDF 입력 (파워포인트를 PDF 로 변환한 보고서) — 둘 다 순수 파이썬
+pdfminer.six==20250506
+pypdf==6.1.3

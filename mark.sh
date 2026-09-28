@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  mark.sh ─ 브라우저 없이 마킹하기 (macOS / Linux)
-#    bash mark.sh 보고서.pptx [다른.pptx ...]
-#    결과는 원본 옆에  파일이름_특허마킹.pptx  로 저장됩니다.
+#    bash mark.sh 보고서.pptx [다른.pptx 또는 .pdf ...]
+#    결과는 원본 옆에  파일이름_특허마킹.pptx (PDF 는 .pdf) 로 저장됩니다.
 #    (Windows 에서는 mark.bat 위에 파일을 끌어다 놓으면 됩니다)
 # =============================================================================
 set -u
@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 OLLAMA_URL="${PM_OLLAMA_HOST:-http://127.0.0.1:11434}"
 
 if [ $# -eq 0 ]; then
-  echo "사용법: bash mark.sh 보고서.pptx [다른.pptx ...]"
+  echo "사용법: bash mark.sh 보고서.pptx [다른.pptx 또는 .pdf ...]"
   exit 1
 fi
 if [ ! -x .venv/bin/python ]; then

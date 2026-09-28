@@ -77,7 +77,7 @@ if errorlevel 1 (
     exit /b 1
   )
 )
-".venv\Scripts\python.exe" -c "import pptx, fastapi, uvicorn, multipart"
+".venv\Scripts\python.exe" -c "import pptx, fastapi, uvicorn, multipart, pdfminer, pypdf"
 if errorlevel 1 ( echo    [실패] 라이브러리 확인 & pause & exit /b 1 )
 echo    완료
 
