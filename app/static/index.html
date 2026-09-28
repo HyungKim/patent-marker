@@ -208,7 +208,7 @@
 <div class="wrap">
   <!-- 제목 옆 회색 버전: main.py 가 __PM_VERSION__ 자리에 심는다. 업데이트가 됐는지 확인하는 표시 -->
   <h1>특허 마킹 도구 <span class="ver" title="도구 버전 — 새 버전으로 바뀌었는지 확인하는 표시">__PM_VERSION__</span></h1>
-  <p class="sub">회사 보고자료(PPTX)를 읽어 특허 출원 검토가 필요한 구간을 표시합니다. 문서는 이 컴퓨터를 벗어나지 않습니다.</p>
+  <p class="sub">회사 보고자료(PPTX · PDF)를 읽어 특허 출원 검토가 필요한 구간을 표시합니다. 문서는 이 컴퓨터를 벗어나지 않습니다.</p>
 
   <!-- 상단 상태줄: health() 가 채움 -->
   <div id="health"><span class="dot" id="hdot"></span><span id="htext">온디바이스 모델 확인 중…</span></div>
@@ -233,14 +233,14 @@
             <button class="ghost sm" id="openInput">폴더 열기</button>
           </span></div>
         <div class="flist" id="flist"><div class="empty">불러오는 중…</div></div>
-        <div class="srcnote">탐색기에서 <code id="inputDir">input</code> 폴더에 PPTX 를 복사해 두면 여기 나타납니다.
+        <div class="srcnote">탐색기에서 <code id="inputDir">input</code> 폴더에 PPTX 또는 PDF 를 복사해 두면 여기 나타납니다.
           (목록이 안 바뀌면 [새로고침])</div>
       </div>
       <!-- ② 경로 붙여넣기 · ③ 찾기 · ④ 업로드 -->
       <div class="srcbox">
         <div class="srctitle">② 경로 붙여넣기 · ③ 찾기</div>
         <div class="row" style="gap:8px">
-          <input type="text" id="pathIn" placeholder="C:\…\보고서.pptx" spellcheck="false">
+          <input type="text" id="pathIn" placeholder="C:\…\보고서.pptx 또는 .pdf" spellcheck="false">
           <button class="ghost sm" id="pathUse">이 파일로</button>
           <button class="sm" id="pickBtn">찾기…</button>
         </div>
@@ -249,7 +249,7 @@
         <div id="drop">
           <b>④ 브라우저로 올리기 — 여기에 놓거나 클릭</b>
           <span>업로드가 막힌 PC 에서는 ①~③ 을 쓰세요</span>
-          <input type="file" id="file" accept=".pptx,.potx">
+          <input type="file" id="file" accept=".pptx,.potx,.pdf">
         </div>
       </div>
     </div>
@@ -304,7 +304,7 @@
   <!-- ═══════════ 검토 반영 탭 ═══════════ -->
   <div id="viewReview" class="hide">
     <div class="panel">
-      <div class="srchead">검토완료 PPTX 고르기 <span class="stage">— 여러 개 한꺼번에 가능</span></div>
+      <div class="srchead">검토완료 PPTX·PDF 고르기 <span class="stage">— 여러 개 한꺼번에 가능</span></div>
       <div class="srcgrid">
         <div class="srcbox">
           <div class="srctitle">① input · output 폴더에서 고르기
@@ -329,15 +329,16 @@
           <div id="rdrop">
             <b>④ 브라우저로 올리기 — 여기에 놓거나 클릭</b>
             <span>업로드가 막힌 PC 에서는 ①~③ 을 쓰세요</span>
-            <input type="file" id="rfile" accept=".pptx" multiple>
+            <input type="file" id="rfile" accept=".pptx,.pdf" multiple>
           </div>
         </div>
       </div>
       <p class="note" style="margin-bottom:0">
-        <b>검토 방법</b> — 마킹된 PPTX 를 PowerPoint 로 열어:
+        <b>검토 방법</b> — 마킹된 PPTX 는 PowerPoint 로, 마킹된 PDF 는 Edge·Acrobat 등 PDF 뷰어로 열어:
         잘못 잡은 곳은 <b>형광펜을 지우고</b>, 놓친 곳은 <b>새로 칠하고</b>, 등급이 틀리면 <b>색을 바꿔</b> 저장한 뒤 여기에 넣습니다.<br>
-        색 규약: <b>노랑 계열 = A</b>(수단이 드러남) · <b>하늘/파랑 계열 = B</b>(묵시) · <b>살구/빨강 계열 = C</b>(공개 관련정보)
-        — PowerPoint 기본 형광펜 색을 그대로 써도 됩니다(비슷한 색으로 자동 인식).
+        색 규약: <b>노랑 계열 = A</b>(수단이 드러남) · <b>청록/하늘/파랑 계열 = B</b>(묵시) · <b>빨강/분홍/살구 계열 = C</b>(공개 관련정보)
+        — PowerPoint·PDF 뷰어의 기본 형광펜 색을 그대로 써도 됩니다(비슷한 색으로 자동 인식).
+        PDF 는 뷰어의 "형광펜(강조)" 도구로 칠한 것만 인식하고, 도형·펜 그리기는 인식하지 않습니다.
       </p>
     </div>
 
@@ -518,7 +519,7 @@ function showPickError(msg){
 function renderFileList(el, groups, multi, onChange){
   const total = groups.reduce((a,g) => a + g.files.length, 0);
   if(!total){
-    el.innerHTML = `<div class="empty">아직 파일이 없습니다. 탐색기에서 폴더에 PPTX 를 복사한 뒤 [새로고침].</div>`;
+    el.innerHTML = `<div class="empty">아직 파일이 없습니다. 탐색기에서 폴더에 PPTX 또는 PDF 를 복사한 뒤 [새로고침].</div>`;
     return;
   }
   el.innerHTML = groups.map(g => (groups.length > 1 && g.files.length ? `<div class="fgroup">${esc(g.label)}</div>` : "") +
