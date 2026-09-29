@@ -12,6 +12,11 @@ tests/test_pdf.py 가 PDF 경로를 점검할 때 이 파일을 쓰고, 없으�
   시스템의 한글 글꼴로 대신 보여 줍니다. 모양은 소박하지만 글자·좌표는 정확해서 점검용으로 충분합니다.
 - 실제 연습은 PowerPoint 에서 samples/회사보고자료_예시.pptx 를 "다른 이름으로 저장 → PDF" 로 만든 파일이 가장 실전과 같습니다.
 - 그 글꼴에 없는 글자(가운뎃점 ·)는 비슷한 글자로 바꿔 넣습니다 (SUBST).
+- build(..., highlights=[...]) 로 "작성자가 칠해 둔 형광펜" 을 흉내 낼 수 있습니다. 파워포인트가 PDF 로 저장할 때처럼
+  글줄 뒤에 색 네모를 그려 넣습니다 (tests/test_prehl.py 가 원본 형광펜 정리를 점검할 때 씀).
+      {"slide": 2, "para": 5, "color": "FFFF00"}                       글줄에 딱 붙은 형광펜
+      {"slide": 2, "para": 7, "color": "000080", "text": "FFFFFF"}     진한 형광펜 + 흰 글자
+      {"slide": 2, "para": 9, "color": "DEEBF7", "pad": 8}             여백을 둔 채움 (표 칸·도형 — 형광펜이 아님)
 """
 from __future__ import annotations
 
@@ -90,9 +95,14 @@ def layout(pptx: Path) -> tuple[int, list[list[tuple[float, float, float, list[s
     return deck.slide_count, pages
 
 
-def build(pptx: Path, out: Path) -> tuple[int, int]:
-    """PDF 파일을 쓴다. (쪽 수, 문단 수) 를 돌려준다."""
+def _rgb(hexstr: str) -> str:
+    return " ".join(f"{int(hexstr[i:i + 2], 16) / 255:.4f}" for i in (0, 2, 4))
+
+
+def build(pptx: Path, out: Path, highlights: list[dict] | None = None) -> tuple[int, int]:
+    """PDF 파일을 쓴다. (쪽 수, 문단 수) 를 돌려준다. highlights 는 파일 머리말 참고."""
     n_pages, pages = layout(pptx)
+    marks = {(h["slide"], h["para"]): h for h in (highlights or [])}
     objs: list[bytes] = []
 
     def add(body: bytes) -> int:
@@ -110,14 +120,27 @@ def build(pptx: Path, out: Path) -> tuple[int, int]:
                f"/DescendantFonts [{cid} 0 R] >>".encode())
     page_ids = []
     n_paras = 0
-    for items in pages:
-        parts = []
-        for x, y, fs, lines in items:
+    for page_no, items in enumerate(pages, 1):
+        # 색은 파워포인트·macOS 가 쓰는 방식(색 공간 지정 뒤 sc)으로 적고 글자 덩어리는 q … Q 로 감싼다 —
+        # 저장·복원 뒤에도 형광펜 색을 제대로 읽는지(pdfdoc._Interpreter) 점검할 수 있게
+        parts = ["/DeviceRGB cs 0 0 0 sc"]
+        for k, (x, y, fs, lines) in enumerate(items, 1):
             n_paras += 1
+            h = marks.get((page_no, k))
+            if h:
+                pad = float(h.get("pad", 0))
+                parts.append(f"{_rgb(h['color'])} sc")
+                for i, line in enumerate(lines):
+                    base = y - fs - i * fs * 1.35                      # 이 줄의 글자 밑선
+                    w = sum(_w(c, fs) for c in line)
+                    parts.append(f"{x - pad:.2f} {base - 0.22 * fs - pad:.2f} {w + 2 * pad:.2f} {1.32 * fs + 2 * pad:.2f} re f")
+            parts.append("q")
+            parts.append(f"{_rgb(h['text']) if h and h.get('text') else '0 0 0'} sc")
             parts.append(f"BT /F1 {fs:g} Tf {fs * 1.35:g} TL 1 0 0 1 {x:g} {y - fs:g} Tm")
             for i, line in enumerate(lines):
                 parts.append(("" if i == 0 else "T* ") + f"<{_hex(line)}> Tj")
             parts.append("ET")
+            parts.append("Q")
         data = zlib.compress("\n".join(parts).encode("ascii"))
         cs = add(b"<< /Length " + str(len(data)).encode() + b" /Filter /FlateDecode >>\nstream\n" + data + b"\nendstream")
         pg = add(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_W:g} {PAGE_H:g}] "
