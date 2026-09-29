@@ -68,6 +68,10 @@ bash run.sh
 
 원본에 덧붙이는 것은 **형광펜과 범례 상자 하나뿐**입니다. 배지·발표자 노트·요약 슬라이드는 붙이지 않습니다.
 
+**원본에 있던 형광펜은 걷어내고 시작합니다** (2026-09-29 부터). 작성자가 강조하려고 칠해 둔 형광펜이 도구의 표시와 섞이지 않고,
+검토 반영 때 "검토자가 새로 칠한 누락" 으로 잘못 학습되지도 않습니다. 걷어내는 것은 마킹본에서만이고 원본 파일은 그대로입니다.
+끄려면 화면의 `원본 형광펜 지우고 시작` 체크를 풉니다. 자세한 동작 → [docs/01](docs/01_프로그램_구조.md) 의 `app/prehl.py`.
+
 **PDF 를 넣으면** (2026-09-28 부터) 결과도 PDF 이고, 형광펜은 **PDF 주석**이라 Edge·Chrome·Acrobat Reader 어디서나 보입니다.
 형광펜에 마우스를 올리면 등급·분류·사유 메모가 보이고, 1쪽 왼쪽 위의 메모 아이콘이 범례입니다. 검토도 뷰어의 형광펜 도구로 지우고·칠하고·색을 바꾸면 됩니다
 (【출원검토필요】 문구 옵션은 PDF 에 적용되지 않습니다). 스캔한 PDF(글자가 그림)는 읽지 못합니다.
@@ -94,7 +98,7 @@ bash run.sh
 ## 폴더 구성
 
 ```
-app/        프로그램 본체 (config → extract → lexicon → analyze → merge → mark, pdfdoc(PDF 판), review, evaluate, memory, pipeline, local, cli, main)
+app/        프로그램 본체 (config → extract → lexicon → analyze → merge → mark, pdfdoc(PDF 판), prehl(원본 형광펜 정리), review, evaluate, memory, pipeline, local, cli, main)
 input/      분석할 PPTX·PDF 를 넣는 곳 (처음 실행 때 자동 생성, 저장소에는 미포함)
 output/     결과 이름_특허마킹.pptx / .pdf 가 저장되는 곳 (자동 생성, 저장소에는 미포함)
 review_data/  검토 반영으로 쌓이는 교정 데이터 (자동 생성, 저장소에는 미포함)
@@ -132,9 +136,15 @@ setup.*     처음 한 번 설치     run.*   실행(웹 화면)     mark.*   �
 .venv/bin/python tests/test_model_call.py # 30초 · 모델 호출: 스트리밍·중단·서버 감지
 .venv/bin/python tests/test_memory.py     # 몇 초 · 검토 학습: 문단 기억·제외/자동 규칙·유사 사례·스위치
 .venv/bin/python tests/test_pdf.py        # 30초 · PDF 입력: 읽기·형광펜 주석·검토본 읽기·검토 시뮬레이션·명령행·웹 (점검용 PDF 는 스스로 만듦)
+.venv/bin/python tests/test_prehl.py      # 30초 · 원본 형광펜 정리: 지우기·글자색 보정·끄기·재분석·PDF 주석 삭제·굳은 형광펜 덮기
+.venv/bin/python tests/test_cp949.py      # 20초 · 한국어 Windows 출력 글자표(cp949)로도 멈추지 않는지
 .venv/bin/python tests/e2e.py             # 수 분 · 진짜 모델
 ```
 (Windows 는 `.venv\Scripts\python` 로 바꿔 실행)
+
+**Windows 자동 점검** — 저장소의 Actions 탭 → `windows-check` → Run workflow. GitHub 의 Windows 서버가 회사 PC 와 같은 방법
+(Download ZIP → `C:\patent_marker`)으로 받아 `setup.bat`, 위 점검 전부, `mark.bat`, `run.bat` 을 가짜 모델로 돌리고 결과 표를 남깁니다
+(`tests/ci_windows.py`, 3분 안팎). 무엇을 확인하고 무엇을 확인하지 못하는지는 `docs/05_개선_이력.md` 21회차.
 
 ---
 
