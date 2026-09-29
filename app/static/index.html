@@ -263,6 +263,8 @@
       <label class="opt" id="embedWrap" title="유사 사례를 글자 겹침이 아니라 '뜻' 으로 찾습니다 (bge-m3 임베딩 모델, 약 1.2GB). 없으면 자동으로 글자 겹침">
         <input type="checkbox" id="optEmbed" checked> 뜻 기준 검색 (bge-m3)<span class="mnote" id="embedNote"></span></label>
       <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
+      <label class="opt" title="작성자가 강조하려고 칠해 둔 형광펜을 걷어내고 분석합니다. 원본 파일은 그대로이고, 마킹본에는 도구와 검토자의 형광펜만 남습니다. 끄면 작성자 형광펜이 검토 반영 때 검토자가 칠한 것으로 읽힐 수 있습니다">
+        <input type="checkbox" id="optStrip" checked> 원본 형광펜 지우고 시작</label>
       <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
       <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
       <div class="grow"></div>
@@ -481,6 +483,7 @@ async function health(){
     $("#htext").innerHTML = `온디바이스 모델 <code>${h.model}</code> 준비됨 · 오프라인 동작`;
     fillModels(h.choices || []);
     fillLearn(h.learn || {});
+    if(h.strip_default === false) $("#optStrip").checked = false;   // 환경 변수 PM_STRIP_HL=0 이면 기본 해제
     return true;
   }catch(e){
     $("#hdot").className = "dot bad";
@@ -617,13 +620,14 @@ $("#go").onclick = async () => {
   const think = $("#optThink").checked, scan_all = $("#optScanAll").checked, tag_marks = $("#optTag").checked;
   const model = chosenModel();           // 정밀(8b) / 빠름(4b) — 비어 있으면 서버 기본값
   const learn = $("#optLearn").checked, learn_embed = $("#optEmbed").checked;
+  const strip_hl = $("#optStrip").checked;
   try{
     if(selected.kind === "upload"){
       const fd = new FormData();           // 파일 업로드용 묶음
       fd.append("file", selected.file);
       if(model) fd.append("model", model);
       fd.append("think", think); fd.append("scan_all", scan_all); fd.append("tag_marks", tag_marks);
-      fd.append("learn", learn); fd.append("learn_embed", learn_embed);
+      fd.append("learn", learn); fd.append("learn_embed", learn_embed); fd.append("strip_hl", strip_hl);
       let r;
       try{ r = await fetch("/api/jobs", {method:"POST", body:fd}); }
       catch(_){ throw new Error("브라우저 업로드가 되지 않습니다 — 이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요."); }
@@ -631,7 +635,7 @@ $("#go").onclick = async () => {
       if(!r.ok) throw new Error(j.detail || "업로드 실패 (이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요)");
       jobId = j.job_id;
     } else {
-      const j = await lapi("/api/local/jobs", {path:selected.path, model, think, scan_all, tag_marks, learn, learn_embed});
+      const j = await lapi("/api/local/jobs", {path:selected.path, model, think, scan_all, tag_marks, learn, learn_embed, strip_hl});
       jobId = j.job_id;
     }
   }catch(e){ showPickError(e.message); return; }   // 시작 전 오류는 그 자리에서 보여 주고 머문다
@@ -711,7 +715,8 @@ function render(st){
   $("#speed").textContent = st.speed_text
     ? `이번 실행: ${st.speed_text} · 모델 호출 ${st.calls}회 · 인용구 일치 ${st.quote_located} · ${st.model} · 버전 ${st.version}  (review_data\\run_log.tsv 에 기록됨)`
       + (st.learn_text ? `\n검토 학습: ${st.learn_text}` : "")
-    : "";
+      + (st.prehl_text ? `\n${st.prehl_text}` : "")
+    : (st.prehl_text || "");
 
   const opts = [["ALL","전체"],["A","A 등급"],["B","B 등급"],
                 ["IMP","묵시적 표현"],["RISK","C 공개 관련정보"]];
