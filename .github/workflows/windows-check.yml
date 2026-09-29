@@ -1,0 +1,37 @@
+# Windows check for the company PC (Korean Windows, Download ZIP -> C:\patent_marker)
+# Runs tests/ci_windows.py on a GitHub Windows server: setup.bat, all tests, mark.bat, run.bat
+# against a fake Ollama. Start it by hand: Actions tab -> windows-check -> Run workflow.
+name: windows-check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 'Download ZIP and unpack to C:\patent_marker'
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $zip = 'C:\pm.zip'
+          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/archive/${{ github.sha }}.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath 'C:\pm_unzip'
+          $top = Get-ChildItem -Path 'C:\pm_unzip' -Directory | Select-Object -First 1
+          Move-Item -Path $top.FullName -Destination 'C:\patent_marker'
+          Get-ChildItem -Path 'C:\patent_marker' | Format-Table Name, Length
+      - name: Run Windows check
+        shell: pwsh
+        working-directory: 'C:\patent_marker'
+        run: python tests/ci_windows.py
