@@ -19,6 +19,8 @@ cli.py ─ 브라우저 없이 명령행(또는 mark.bat 끌어다 놓기)으로
 from __future__ import annotations
 
 import argparse
+import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -46,6 +48,28 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     if args.fast:
         args.model = config.FAST_MODEL
     return args
+
+
+def recover_dropped(files: list[str], cmdline: str) -> list[str]:
+    """mark.bat 에 끌어다 놓은 파일 이름이 Windows 명령줄 규칙 때문에 잘렸으면 원래 이름을 되살린다.
+
+    탐색기는 공백이 든 경로만 따옴표로 감싸 넘긴다. 그래서 C:\\문서\\R&D현황.pptx 처럼 & 가 있고 공백이 없는
+    이름은 cmd 가 & 앞(C:\\문서\\R)까지만 넘기고 뒷부분은 다른 명령으로 실행하려 든다 (^ 도 사라진다).
+    mark.bat 이 잘리기 전의 명령줄 전체(%cmdcmdline%)를 PM_CMDLINE 으로 넘겨 주므로 거기서 경로를 다시 읽는다.
+    넘어온 파일이 전부 있으면 아무것도 하지 않는다 (2026-09-30 Windows 점검에서 확인한 문제).
+    """
+    n_ok = sum(Path(local.clean_path(f)).is_file() for f in files)
+    if not cmdline or n_ok == len(files):
+        return files
+    m = re.search(r'mark\.bat"?\s+(.*)$', cmdline, re.I | re.S)
+    if not m:
+        return files
+    rest = m.group(1).strip()
+    if rest.endswith('"') and rest.count('"') % 2 == 1:      # cmd /c ""...mark.bat" 파일들" 의 바깥 따옴표
+        rest = rest[:-1]
+    found = [a or b for a, b in re.findall(r'"([^"]*)"|(\S+)', rest)]
+    found = [f for f in found if Path(f).is_file()]
+    return found if len(found) > n_ok else files
 
 
 def _dest_for(src: Path, out_dir: Path | None) -> tuple[Path, str]:
@@ -120,10 +144,14 @@ def main(argv: list[str] | None = None) -> int:
                              learn_embed=config.LEARN_EMBED and not args.no_embed,
                              strip_highlights=config.STRIP_HIGHLIGHTS and not args.keep_highlights)
 
+    files = recover_dropped(args.files, os.environ.get("PM_CMDLINE", ""))
+    if files != args.files:
+        print("  (파일 이름의 & 때문에 Windows 가 자른 경로를 되살렸습니다)")
+
     # 먼저 파일들을 전부 확인한다 — 하나가 틀렸다고 나머지까지 못 돌리지 않게, 틀린 것만 알려 준다
     srcs: list[Path] = []
     bad = 0
-    for raw in args.files:
+    for raw in files:
         try:
             srcs.append(local.resolve_pptx(raw))
         except ValueError as e:
