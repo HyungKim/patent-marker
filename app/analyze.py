@@ -256,12 +256,19 @@ def _chat(payload: dict, cancel: threading.Event | None = None,
         if state["done"]:
             return
         state["reason"] = reason
-        try:
-            sock = conn.sock
-            if sock is not None:
-                sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
+        sock = conn.sock
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)      # macOS·Linux 는 이것만으로 막힌 읽기가 깨어난다
+            except OSError:
+                pass
+            try:
+                # Windows 는 shutdown 으로는 깨어나지 않고 소켓 핸들을 실제로 닫아야 한다 (2026-09-30 Windows 점검에서
+                # 확인: 모델이 문단을 읽는 동안 [중단] 이 첫 글자가 올 때까지 듣지 않았다). sock.close() 는
+                # http.client 가 만든 읽기용 파일 객체가 살아 있는 동안 핸들을 닫지 않으므로 떼어 내 직접 닫는다.
+                socket.close(sock.detach())
+            except (OSError, ValueError):
+                pass
         try:
             conn.close()
         except Exception:  # noqa: BLE001
