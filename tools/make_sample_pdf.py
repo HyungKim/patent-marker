@@ -165,6 +165,13 @@ def build(pptx: Path, out: Path, highlights: list[dict] | None = None) -> tuple[
 
 
 def main() -> None:
+    # 출력이 파일·파이프로 갈 때 그 글자표(cp949·cp1252)에 없는 글자가 있어도 멈추지 않게
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except Exception:  # noqa: BLE001
+                pass
     src = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "samples" / "회사보고자료_예시.pptx"
     dst = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "samples" / "회사보고자료_예시.pdf"
     n_pages, n_paras = build(src, dst)
