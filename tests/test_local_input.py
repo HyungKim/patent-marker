@@ -165,6 +165,31 @@ with tempfile.TemporaryDirectory() as td:
     check("cli: 틀린 파일은 건너뛰고 나머지는 처리, 종료 코드 1",
           rc == 1 and (src_dir / "현장_특허마킹(2).pptx").exists())
 
+    # ── 4-1. mark.bat 에 끌어다 놓은 이름이 Windows 명령줄 규칙으로 잘렸을 때 되살리기 ──
+    drop_dir = tmp / "끌어놓기"
+    drop_dir.mkdir()
+    amp, spaced, caret, plain = (drop_dir / n for n in ("R&D현황.pptx", "b c.pptx", "A^B(최종).pdf", "plain.pptx"))
+    for f in (amp, spaced, caret, plain):
+        f.write_bytes(b"x")
+
+    def dropped(*paths: Path) -> str:        # 탐색기가 만드는 명령줄: 공백이 든 경로만 따옴표
+        args = " ".join(f'"{x}"' if " " in str(x) else str(x) for x in paths)
+        return f'C:\\WINDOWS\\system32\\cmd.exe /c ""C:\\patent_marker\\mark.bat" {args}"'
+
+    cut = str(drop_dir / "R")                # cmd 가 & 앞에서 자른 모습
+    for label, argv, line, want in [
+        ("& 가 든 이름 하나", [cut], dropped(amp), [str(amp)]),
+        ("& 가 든 이름 + 공백이 든 이름", [cut], dropped(amp, spaced), [str(amp), str(spaced)]),
+        ("공백이 든 이름 뒤에 & 가 든 이름", [str(spaced), cut], dropped(spaced, amp), [str(spaced), str(amp)]),
+        ("^ 가 사라진 이름", [str(drop_dir / "AB(최종).pdf")], dropped(caret), [str(caret)]),
+        ("멀쩡한 이름은 손대지 않는다", [str(plain), str(spaced)], dropped(plain, spaced), [str(plain), str(spaced)]),
+        ("명령줄을 모르면 그대로", [cut], "", [cut]),
+        ("검은 창에서 직접 실행한 경우는 그대로", [cut], '"C:\\WINDOWS\\system32\\cmd.exe"', [cut]),
+        ("되살려도 없는 파일이면 그대로", [str(drop_dir / "X")], dropped(drop_dir / "X&Y.pptx"), [str(drop_dir / "X")]),
+    ]:
+        got = cli.recover_dropped(argv, line)
+        check(f"끌어다 놓기 복구: {label}", got == want, "" if got == want else str(got))
+
     # ── 5. 명령행 (mark.bat 이 부르는 방식 그대로: 별도 프로세스) ──
     env = {**os.environ, "PYTHONIOENCODING": "utf-8",     # 자식의 출력 글자표 고정 (Windows 기본은 cp949)
            "PM_OLLAMA_HOST": MOCK_HOST, "PM_OUTPUT_DIR": str(config.OUTPUT_DIR),

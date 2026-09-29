@@ -279,12 +279,18 @@ def main() -> int:
         note("mark.bat: 괄호가 든 이름 (따옴표 없이 넘어옴)", (names / "보고서(최종)_특허마킹.pptx").exists())
         rc, out = run(drop("mark.bat", [amp_sp], vpy), benv, 900, "mark.bat \"R&D 현황 50%.pptx\"")
         note("mark.bat: & 와 % 와 공백이 든 이름", (names / "R&D 현황 50%_특허마킹.pptx").exists())
+        # & 가 있고 공백이 없는 이름: cmd 가 & 앞에서 이름을 자르고 뒷부분을 명령으로 실행하려 든다.
+        # mark.bat 이 원래 명령줄을 넘겨 주어 cli 가 이름을 되살리고, 끝에서 창을 닫아 뒷부분이 실행되지 않게 한다.
+        cut_cmd, aenv = drop("mark.bat", [amp], vpy), benv
+        if not WIN:                                  # Mac: cmd 가 자른 모습과 원래 명령줄을 흉내 낸다
+            cut_cmd = [str(vpy), "-m", "app.cli", str(names / "R")]
+            aenv = {**benv, "PM_CMDLINE": f'cmd.exe /c ""C:\\patent_marker\\mark.bat" {amp}"'}
+        rc, out = run(cut_cmd, aenv, 900, "mark.bat R&D현황.pptx — 따옴표 없이")
+        stray = "recognized" in out or "배치 파일이 아닙니다" in out
+        note("mark.bat: & 가 있고 공백이 없는 이름 — 잘린 이름을 되살려 처리",
+             (names / "R&D현황_특허마킹.pptx").exists() and "되살렸습니다" in out and not stray,
+             "잘린 뒷부분이 명령으로 실행됨" if stray else "")
         if WIN:
-            rc, out = run(drop("mark.bat", [amp], vpy), benv, 900, "mark.bat R&D현황.pptx — 따옴표 없이")
-            ok_amp = (names / "R&D현황_특허마킹.pptx").exists()
-            msg = next((ln.strip() for ln in out.splitlines() if "찾을 수 없" in ln or "recognized" in ln or "인식" in ln), "")
-            note("참고 — mark.bat: & 가 있고 공백이 없는 이름", None,
-                 "처리됨" if ok_amp else f"처리 안 됨 (Windows 가 & 에서 이름을 자름) {msg[:60]}")
             rc, out = run("cmd /c mark.bat", benv, 120, "mark.bat (파일 없이 더블클릭)")
             note("mark.bat: 파일 없이 실행하면 사용법을 알리고 끝남", rc == 1 and "끌어다" in out, f"종료 코드 {rc}")
 
