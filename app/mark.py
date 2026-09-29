@@ -16,7 +16,7 @@ mark.py ─ 분석 결과를 PPTX 파일에 실제로 "그려 넣는" 단계
 
       <a:r>
         <a:rPr sz="1200" b="1">                               ← 서식 (12pt, 굵게)
-          <a:highlight><a:srgbClr val="FFD54F"/></a:highlight> ← 형광펜
+          <a:highlight><a:srgbClr val="FFFF00"/></a:highlight> ← 형광펜
         </a:rPr>
         <a:t>캐스케이드 구조</a:t>                             ← 실제 글자
       </a:r>
