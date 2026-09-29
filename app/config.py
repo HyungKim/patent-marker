@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # 화면 제목 옆(회색 글씨)·검은 창 첫 줄·mark.bat 출력·오류 메시지 끝에 그대로 나옵니다.
 # "지금 도는 것이 새 버전인가" 를 회사 PC 에서 한눈에 확인하는 용도라, 저장소에 올릴 때마다
 # 올린 날짜로 바꿉니다 (같은 날 두 번째면 뒤에 b, c …). 동작에는 아무 영향이 없습니다.
-VERSION = "2026-09-28b"
+VERSION = "2026-09-29"
 
 # ─────────────────────────────────────────────────────────────────
 # 1. 온디바이스 LLM (Ollama) 관련
@@ -75,6 +75,15 @@ LEARN_EMBED = os.environ.get("PM_LEARN_EMBED", "1") == "1"
 EMBED_MODEL = os.environ.get("PM_EMBED_MODEL", "bge-m3")
 MEMORY_SIM = float(os.environ.get("PM_MEMORY_SIM", "0.9"))
 
+# ── 원본 형광펜 정리 (app/prehl.py) — 작성자가 칠해 둔 형광펜을 걷어내고 시작할지 ──
+#   STRIP_HIGHLIGHTS : 분석 전에 원본의 형광펜을 지운다 (화면 "원본 형광펜 지우고 시작", 명령행 --keep-highlights 로 끔).
+#                      지우는 것은 마킹본에서만이고 원본 파일은 그대로입니다. 끄면 작성자 형광펜이 검토 반영 때
+#                      "검토자가 칠한 것" 으로 읽혀 엉뚱한 표현이 학습될 수 있습니다.
+#   PDF_COVER_BAKED  : PDF 에 '그림'으로 굳은 형광펜(PPT 를 PDF 로 저장할 때 생김)을 바탕색으로 덮을지.
+#                      회사 PC 의 PDF 뷰어에서 덮은 자리가 이상하게 보이면 0 으로 끄세요 (학습에는 영향 없음).
+STRIP_HIGHLIGHTS = os.environ.get("PM_STRIP_HL", "1") == "1"
+PDF_COVER_BAKED = os.environ.get("PM_PDF_COVER", "1") == "1"
+
 # 모델이 '아무 응답도 보내지 않는' 상태를 얼마나 참을지(초). 0 = 제한 없음 (기본).
 #   회사 PC(CPU 만, 16GB)에서는 슬라이드 하나에 10분이 넘게 걸릴 수 있어 고정 제한을 없앴습니다.
 #   제한이 없어도 화면의 [중단] 은 즉시 듣고, Ollama 프로세스가 사라지면 자동으로 멈춥니다 (analyze._chat).
@@ -111,6 +120,8 @@ GRADE_COLOR = {
     "B": "00FFFF",   # 청록 — PowerPoint 형광펜 '청록' 과 같은 색
     "C": "FF5050",   # 밝은 빨강 (공개 관련정보) — 검은 글자가 읽히도록 순수 빨강보다 밝게
 }
+# 2026-09-28 이전의 기본색. 예전 버전으로 마킹한 파일을 알아볼 때(도구의 밑줄 서명) 씁니다.
+LEGACY_GRADE_COLORS = ("FFD54F", "9FD8F5", "FF9E80")
 GRADE_LABEL = {
     "A": "즉시 출원 검토",
     "B": "발명 발굴 필요",
@@ -217,6 +228,10 @@ class RunOptions:
     # 화면의 체크박스 / 명령행 --no-learn, --no-embed 와 연결. (웹 화면: '검토 학습 적용', '뜻 기준 검색')
     learn: bool = LEARN
     learn_embed: bool = LEARN_EMBED
+
+    # 분석 전에 원본에 있던 형광펜을 걷어낼지 (app/prehl.py). 원본 파일은 바뀌지 않습니다.
+    # (웹 화면: '원본 형광펜 지우고 시작', 명령행 --keep-highlights 로 끔)
+    strip_highlights: bool = STRIP_HIGHLIGHTS
 
     # 이 글자 수보다 짧은 문단은 분석하지 않습니다. (예: "01", "→" 같은 장식 글자)
     min_chars: int = 6

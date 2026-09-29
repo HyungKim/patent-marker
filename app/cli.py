@@ -7,6 +7,7 @@ cli.py ─ 브라우저 없이 명령행(또는 mark.bat 끌어다 놓기)으로
     python -m app.cli a.pptx b.pptx --out C:\\결과    → 지정한 폴더에 저장
     python -m app.cli 보고서.pptx --tag              → 【출원검토필요】 문구도 표시 (흑백 인쇄용)
     python -m app.cli 보고서.pptx --fast             → 빠름 모델(qwen3:4b-instruct)로 초벌 — 약 3배 빠름, 후보는 덜 잡힘
+    python -m app.cli 보고서.pptx --keep-highlights  → 원본에 있던 형광펜을 지우지 않고 그대로 둠 (기본은 지우고 시작)
 
   Windows 에서는 mark.bat 아이콘 위에 PPTX·PDF 를 끌어다 놓으면 이 파일이 실행됩니다.
   Ollama 가 떠 있어야 합니다 (run.bat / mark.bat 이 자동으로 켭니다).
@@ -39,6 +40,8 @@ def _parse(argv: list[str]) -> argparse.Namespace:
                     help=f"빠름 모델({config.FAST_MODEL}) 사용 — 약 3배 빠르지만 후보를 덜 잡음 (초벌용)")
     ap.add_argument("--no-learn", action="store_true", help="검토 학습(문단 기억·제외 사전·유사 사례) 끄기")
     ap.add_argument("--no-embed", action="store_true", help=f"유사 사례를 뜻 기준({config.EMBED_MODEL})으로 찾지 않고 글자 겹침만")
+    ap.add_argument("--keep-highlights", action="store_true",
+                    help="원본에 있던 형광펜을 지우지 않고 그대로 둠 (기본은 지우고 시작 — 검토 반영 때 섞이지 않게)")
     args = ap.parse_args(argv)
     if args.fast:
         args.model = config.FAST_MODEL
@@ -89,6 +92,8 @@ def run_one(src: Path, out_dir: Path | None, opts: config.RunOptions) -> Path:
         print(f"  속도: {stats['speed_text']} · 모델 호출 {stats.get('calls', 0)}회 · "
               f"인용구 일치 {stats.get('quote_located', '')}  (review_data\\run_log.tsv 에 기록됨)")
         print(f"  검토 학습: {stats.get('learn_text', '')}")
+    if stats.get("prehl_text"):
+        print(f"  {stats['prehl_text']}")
     print(f"  저장: {dst}")
     return dst
 
@@ -112,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
     opts = config.RunOptions(model=args.model, think=args.think,
                              scan_all_paragraphs=not args.no_scan_all, tag_marks=args.tag,
                              learn=config.LEARN and not args.no_learn,
-                             learn_embed=config.LEARN_EMBED and not args.no_embed)
+                             learn_embed=config.LEARN_EMBED and not args.no_embed,
+                             strip_highlights=config.STRIP_HIGHLIGHTS and not args.keep_highlights)
 
     # 먼저 파일들을 전부 확인한다 — 하나가 틀렸다고 나머지까지 못 돌리지 않게, 틀린 것만 알려 준다
     srcs: list[Path] = []

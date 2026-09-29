@@ -28,10 +28,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import analyze, config, extract, mark, memory, merge, pdfdoc, review
+from . import analyze, config, extract, mark, memory, merge, pdfdoc, prehl, review
 
 RUN_LOG_COLUMNS = ["일시", "버전", "모델", "파일", "슬라이드", "모델호출", "입력토큰", "출력토큰",
-                   "읽기초", "쓰기초", "쓰기토큰/초", "총소요초", "후보", "A", "B", "C", "인용일치", "학습", "결과파일"]
+                   "읽기초", "쓰기초", "쓰기토큰/초", "총소요초", "후보", "A", "B", "C", "인용일치", "학습",
+                   "원본형광펜", "결과파일"]
 
 
 def learn_text(lt: dict) -> str:
@@ -116,7 +117,8 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
 
     # ── 1단계: PPTX 읽기 ──────────────────────────────────────
     report("문서 읽는 중")
-    deck = extract.extract(str(src))
+    # 원본에 있던 형광펜은 여기서 걷어낸다 (PPTX). PDF 는 저장할 때 걷어낸다. 원본 파일은 바뀌지 않는다.
+    deck = extract.extract(str(src), strip_highlights=opts.strip_highlights)
     total = deck.slide_count
 
     # ── 2단계: 규칙 사전으로 1차 스캔 ─────────────────────────
@@ -216,7 +218,9 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
     # ── 5단계: PPTX(또는 PDF)에 마킹하고 저장 ─────────────────
     if isinstance(deck, pdfdoc.PdfDeck):
         report("PDF 마킹 중", total, total, [f.to_public() for f in resolved])
-        stats = pdfdoc.apply_and_save(deck, resolved, marks, dst, tag_marks=opts.tag_marks)
+        stats = pdfdoc.apply_and_save(deck, resolved, marks, dst, tag_marks=opts.tag_marks,
+                                      strip_highlights=opts.strip_highlights)
+        stats.pop("prehl", None)
     else:
         report("PPTX 마킹 중", total, total, [f.to_public() for f in resolved])
         stats = mark.apply(deck, resolved, marks, tag_marks=opts.tag_marks)
@@ -256,13 +260,16 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
         "speed_text": f"{speed_text(run_stats)} · 총 {int(elapsed) // 60}분 {int(elapsed) % 60:02d}초",
         "learn": learn,
         "learn_text": learn_text(learn),
+        # 원본 형광펜 정리 (app/prehl.py): 몇 곳을 지웠는지 / 끈 경우 몇 곳이 남았는지
+        "prehl": deck.prehl,
+        "prehl_text": prehl.text(deck.prehl),
     }
     _append_run_log([
         _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), config.VERSION, opts.model, src.name, total,
         run_stats["calls"], run_stats["prompt_tokens"], run_stats["output_tokens"],
         round(run_stats["prompt_sec"], 1), round(run_stats["output_sec"], 1), round(tps, 1),
         round(elapsed, 1), len(resolved), counts["A"], counts["B"], counts["C"], f"{located}/{llm_n}",
-        learn_text(learn), dst.name,
+        learn_text(learn), prehl.short(deck.prehl), dst.name,
     ])
     report("완료", total, total, [f.to_public() for f in resolved])
     return resolved, summary

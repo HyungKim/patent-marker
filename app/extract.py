@@ -66,6 +66,7 @@ class Deck:
 
     prs: PresentationType
     segments: list[Segment]
+    prehl: dict = field(default_factory=dict)      # 원본 형광펜 정리 결과 (app/prehl.py)
 
     @property
     def slide_count(self) -> int:
@@ -130,15 +131,19 @@ def _emit_text_frame(tf, slide_no, kind, addr_prefix, counter, out,
         )
 
 
-def extract(path: str):
+def extract(path: str, strip_highlights: bool = False):
     """PPTX(또는 PDF) 파일 경로를 받아 Deck(문단 목록) 을 돌려준다. 이 파일의 진입점.
 
     .pdf 면 pdfdoc.extract 로 넘긴다 — 돌려주는 PdfDeck 도 segments·slide_count 를 갖고 있어 뒤 단계는 같다.
+    strip_highlights 가 참이면 원본에 있던 형광펜(과 도구가 예전에 넣은 표시)을 걷어낸 뒤 문단을 읽는다.
+    걷어내는 것은 메모리에 올린 사본에서만이고, 원본 파일은 바뀌지 않는다. (app/prehl.py)
     """
     if str(path).lower().endswith(".pdf"):
         from . import pdfdoc
-        return pdfdoc.extract(str(path))
+        return pdfdoc.extract(str(path))          # PDF 는 저장할 때(pdfdoc.apply_and_save) 걷어낸다
+    from . import prehl
     prs = Presentation(path)
+    info = prehl.clean_pptx(prs, strip_highlights)
     segments: list[Segment] = []
     counter = [0]
 
@@ -203,4 +208,4 @@ def extract(path: str):
                 _emit_text_frame(tf, s_idx, "notes", f"s{s_idx}/노트", counter, segments,
                                  slide=slide)
 
-    return Deck(prs=prs, segments=segments)
+    return Deck(prs=prs, segments=segments, prehl=info)

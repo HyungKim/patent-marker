@@ -26,13 +26,15 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pdfminer.high_level import extract_pages
+from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTAnno, LTChar, LTTextBox, LTTextLine
+from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
+from pdfminer.pdfpage import PDFPage
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import Highlight, Rectangle, Text
 from pypdf.generic import ArrayObject, DictionaryObject, FloatObject, NameObject, NumberObject, StreamObject, TextStringObject
 
-from . import config
+from . import config, prehl
 from .extract import Segment
 
 logging.getLogger("pdfminer").setLevel(logging.ERROR)     # 글꼴 정보 경고가 검은 창을 덮지 않게
@@ -53,6 +55,9 @@ class PdfDeck:
     boxes: dict[int, list] = field(default_factory=dict)     # seg_id → [(x0,y0,x1,y1) 또는 None] (글자마다)
     pages: dict[int, tuple[float, float]] = field(default_factory=dict)   # 쪽 → (너비, 높이)
     is_pdf: bool = True
+    baked: dict[int, list] = field(default_factory=dict)     # 쪽 → 덮을 '굳은 형광펜' 네모 목록 (prehl.find_baked)
+    baked_kept: int = 0                                       # 형광펜 같지만 확신이 없어 그대로 둘 개수
+    prehl: dict = field(default_factory=dict)                 # 원본 형광펜 정리 결과
 
     @property
     def slide_count(self) -> int:
@@ -86,15 +91,49 @@ def _join_lines(lines: list[list[tuple[str, tuple | None]]]) -> list[tuple[str, 
     return out
 
 
-def extract(path: str) -> PdfDeck:
-    """PDF 파일 경로 → PdfDeck. extract.extract() 와 같은 모양의 문단 목록을 만든다."""
+class _Interpreter(PDFPageInterpreter):
+    """pdfminer 의 그림 상태 저장(q)이 색 공간을 빠뜨려, 복원(Q) 뒤의 색이 마지막 성분 하나로만 읽힌다
+    (파워포인트·macOS 가 만든 PDF 에서 노랑 1 1 0 이 0 으로 읽힘). 색 공간도 함께 저장하도록 고친다.
+    글자 추출에는 영향이 없고, 형광펜 색·글자색을 읽을 때만 쓰인다."""
+
+    def get_current_state(self):
+        ctm, textstate, gstate = super().get_current_state()
+        gstate.scs = self.graphicstate.scs
+        gstate.ncs = self.graphicstate.ncs
+        return ctm, textstate, gstate
+
+
+def _layout_pages(path: str):
+    """쪽마다 pdfminer 배치 결과(LTPage)를 내놓는다. high_level.extract_pages 와 같되 위의 해석기를 쓴다."""
+    with open(path, "rb") as fp:
+        rsrc = PDFResourceManager(caching=True)
+        device = PDFPageAggregator(rsrc, laparams=LAP)
+        interp = _Interpreter(rsrc, device)
+        for page in PDFPage.get_pages(fp):
+            interp.process_page(page)
+            yield device.get_result()
+
+
+def extract(path: str, detect_baked: bool = True) -> PdfDeck:
+    """PDF 파일 경로 → PdfDeck. extract.extract() 와 같은 모양의 문단 목록을 만든다.
+    detect_baked 면 쪽 내용에 그림으로 굳은 형광펜도 함께 찾아 둔다 (덮는 것은 저장할 때)."""
     segments: list[Segment] = []
     boxes: dict[int, list] = {}
     pages: dict[int, tuple[float, float]] = {}
+    baked: dict[int, list] = {}
+    baked_kept = 0
     n = 0
     page_no = 0
-    for page_no, page in enumerate(extract_pages(str(path), laparams=LAP), 1):
+    for page_no, page in enumerate(_layout_pages(str(path)), 1):
         pages[page_no] = (float(page.width), float(page.height))
+        if detect_baked:
+            try:
+                cover, kept = prehl.find_baked(page)
+            except Exception:  # noqa: BLE001  (형광펜 찾기가 실패해도 분석은 계속)
+                cover, kept = [], 0
+            if cover:
+                baked[page_no] = cover
+            baked_kept += kept
         box_no = 0
         for el in page:
             if not isinstance(el, LTTextBox):
@@ -128,7 +167,8 @@ def extract(path: str) -> PdfDeck:
             segments.append(Segment(seg_id=n, slide_no=page_no, kind="body",
                                     addr=f"p{page_no}/글상자{box_no}", text=text, markable=True))
             boxes[n] = [b for _, b in chars]
-    return PdfDeck(path=str(path), page_count=page_no, segments=segments, boxes=boxes, pages=pages)
+    return PdfDeck(path=str(path), page_count=page_no, segments=segments, boxes=boxes, pages=pages,
+                   baked=baked, baked_kept=baked_kept)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -189,10 +229,15 @@ def _f(v: float) -> str:
     return f"{v:.2f}"
 
 
-def apply_and_save(deck: PdfDeck, findings: list, marks: list, dst: Path, tag_marks: bool = False) -> dict:
-    """판정 결과를 형광펜 주석으로 넣고 dst 에 저장한다. (tag_marks 는 PDF 에선 적용 불가 — 메모로 대신)"""
+def apply_and_save(deck: PdfDeck, findings: list, marks: list, dst: Path, tag_marks: bool = False,
+                   strip_highlights: bool = False) -> dict:
+    """판정 결과를 형광펜 주석으로 넣고 dst 에 저장한다. (tag_marks 는 PDF 에선 적용 불가 — 메모로 대신)
+
+    strip_highlights 면 먼저 원본의 형광펜 주석을 지우고, 쪽에 굳은 형광펜은 바탕색으로 덮는다 (prehl.clean_pdf).
+    """
     reader = PdfReader(deck.path)
     writer = PdfWriter(clone_from=reader)
+    deck.prehl = prehl.clean_pdf(writer, deck.baked, deck.baked_kept, strip_highlights, config.PDF_COVER_BAKED)
     seg_map = {s.seg_id: s for s in deck.segments}
     by_seg: dict[int, list] = {}
     for f in findings:
@@ -262,7 +307,7 @@ def apply_and_save(deck: PdfDeck, findings: list, marks: list, dst: Path, tag_ma
     dst.parent.mkdir(parents=True, exist_ok=True)
     with open(dst, "wb") as fh:
         writer.write(fh)
-    return {"runs_painted": painted, "marks": len(marks), "tags": 0, "legend": legend}
+    return {"runs_painted": painted, "marks": len(marks), "tags": 0, "legend": legend, "prehl": deck.prehl}
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -311,7 +356,7 @@ def read_reviewed(path: str) -> dict:
     """검토완료 PDF → review.read_reviewed() 와 같은 모양: {fingerprint, slide_count, paras:[{slide_no, text, spans, tags}]}"""
     from .review import fingerprint_texts
 
-    deck = extract(path)
+    deck = extract(path, detect_baked=False)
     hl = _highlights(PdfReader(path))
     paras = []
     for seg in deck.segments:
