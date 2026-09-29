@@ -14,6 +14,12 @@ REM  (설치가 안 되어 있으면 먼저 setup.bat 또는 setup_offline.bat)
 REM =============================================================================
 set "OLLAMA_URL=http://127.0.0.1:11434"
 
+REM 끌어다 놓은 파일 이름에 ^& 가 있고 공백이 없으면 (예: R^&D현황.pptx) Windows 가 이름을 ^& 앞에서 잘라 넘깁니다.
+REM 잘리기 전의 명령줄 전체를 파이썬에 따로 알려 주어 원래 이름을 되살리게 합니다 (app\cli.py 의 recover_dropped).
+setlocal EnableDelayedExpansion
+set "PM_CMDLINE=!cmdcmdline!"
+setlocal DisableDelayedExpansion
+
 if "%~1"=="" (
   echo.
   echo   사용법: 마킹할 PPTX 또는 PDF 파일을 이 mark.bat 아이콘 위에 끌어다 놓으세요 ^(여러 개 가능^).
@@ -55,3 +61,6 @@ echo.
 ".venv\Scripts\python.exe" -m app.cli %*
 echo.
 pause
+REM 이름이 ^& 에서 잘렸던 경우, 잘린 뒷부분을 Windows 가 명령으로 실행하려 들지 않게 여기서 창을 닫습니다.
+setlocal EnableDelayedExpansion
+if not "!PM_CMDLINE:&=!"=="!PM_CMDLINE!" exit
