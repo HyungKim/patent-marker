@@ -18,6 +18,12 @@ import threading
 import time
 from pathlib import Path
 
+for _s in (sys.stdout, sys.stderr):                    # Windows 에서 출력을 넘길 때(> log.txt) 글자표가 cp949 가 되는 것 대비
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
@@ -118,7 +124,8 @@ try:
     call()
     check("서버 사라짐 감지 → OllamaError", False, "예외가 없었다")
 except analyze.OllamaError as e:
-    check("서버 사라짐 감지 → 8초 지연을 기다리지 않고 OllamaError", "사라져" in str(e) and time.time() - t < 4,
+    # Windows 는 닫힌 포트의 '연결 거부' 를 아는 데 2초쯤 걸린다 (두 번이면 5초 남짓) → 8초보다 짧으면 된다
+    check("서버 사라짐 감지 → 8초 지연을 기다리지 않고 OllamaError", "사라져" in str(e) and time.time() - t < 7,
           f"{time.time() - t:.1f}초")
 finally:
     config.OLLAMA_HOST = saved

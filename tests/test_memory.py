@@ -15,6 +15,12 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+for _s in (sys.stdout, sys.stderr):                    # Windows 에서 출력을 넘길 때(> log.txt) 글자표가 cp949 가 되는 것 대비
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))

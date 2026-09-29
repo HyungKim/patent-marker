@@ -271,7 +271,8 @@ check("검토 반영 미리보기가 PDF 를 받는다 (.txt 는 거절)",
       and "PDF" in review.preview_many([("메모.txt", str(mod))])[0]["error"])
 
 # ── 6. 명령행 ────────────────────────────────────────────────────
-env = {**os.environ, "PM_OLLAMA_HOST": MOCK_HOST, "PM_OUTPUT_DIR": str(config.OUTPUT_DIR), "PM_REVIEW_DIR": str(config.REVIEW_DIR)}
+env = {**os.environ, "PYTHONIOENCODING": "utf-8",         # 자식의 출력 글자표 고정 (Windows 기본은 cp949)
+       "PM_OLLAMA_HOST": MOCK_HOST, "PM_OUTPUT_DIR": str(config.OUTPUT_DIR), "PM_REVIEW_DIR": str(config.REVIEW_DIR)}
 proc = subprocess.run([sys.executable, "-m", "app.cli", str(src), "--out", str(TMP / "cli_out")],
                       cwd=str(ROOT), env=env, capture_output=True, text=True, encoding="utf-8")
 cli_out = TMP / "cli_out" / "변환보고서_특허마킹.pdf"

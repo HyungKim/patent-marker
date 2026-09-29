@@ -11,6 +11,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+for _s in (sys.stdout, sys.stderr):                    # Windows 에서 출력을 넘길 때(> log.txt) 글자표가 cp949 가 되는 것 대비
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import lexicon  # noqa: E402

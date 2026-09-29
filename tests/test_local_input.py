@@ -18,6 +18,12 @@ import threading
 import time
 from pathlib import Path
 
+for _s in (sys.stdout, sys.stderr):                    # Windows 에서 출력을 넘길 때(> log.txt) 글자표가 cp949 가 되는 것 대비
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
@@ -160,7 +166,8 @@ with tempfile.TemporaryDirectory() as td:
           rc == 1 and (src_dir / "현장_특허마킹(2).pptx").exists())
 
     # ── 5. 명령행 (mark.bat 이 부르는 방식 그대로: 별도 프로세스) ──
-    env = {**os.environ, "PM_OLLAMA_HOST": MOCK_HOST, "PM_OUTPUT_DIR": str(config.OUTPUT_DIR),
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8",     # 자식의 출력 글자표 고정 (Windows 기본은 cp949)
+           "PM_OLLAMA_HOST": MOCK_HOST, "PM_OUTPUT_DIR": str(config.OUTPUT_DIR),
            "PM_REVIEW_DIR": str(config.REVIEW_DIR)}      # 별도 프로세스도 실행 기록을 임시 폴더에
     proc = subprocess.run([sys.executable, "-m", "app.cli", str(here), "--out", str(tmp / "proc_out")],
                           cwd=str(ROOT), env=env, capture_output=True, text=True, encoding="utf-8")

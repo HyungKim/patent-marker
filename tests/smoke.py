@@ -13,6 +13,12 @@ import sys
 from pathlib import Path
 
 # 프로젝트 루트를 import 경로에 추가 (어느 폴더에서 실행해도 app 패키지를 찾도록)
+for _s in (sys.stdout, sys.stderr):                    # Windows 에서 출력을 넘길 때(> log.txt) 글자표가 cp949 가 되는 것 대비
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import config, extract, lexicon, mark, merge  # noqa: E402

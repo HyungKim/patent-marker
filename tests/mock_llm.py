@@ -23,7 +23,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-PORT = 11599   # 진짜 Ollama(11434) 와 겹치지 않는 포트
+import os  # noqa: E402
+
+# 진짜 Ollama(11434) 와 겹치지 않는 포트. Windows 자동 점검(tests/ci_windows.py)은 setup.bat·run.bat·mark.bat 이
+# 보는 11434 에 띄워야 해서 PM_MOCK_PORT 로 바꿀 수 있게 했다.
+PORT = int(os.environ.get("PM_MOCK_PORT", "11599"))
 
 # 모델이 실제로 잡아야 하는 유형들을 흉내 낸다.
 # 인용구는 반드시 원문에 그대로 있어야 하므로, 문단 텍스트에서 직접 골라낸다.
@@ -160,7 +164,25 @@ def start() -> str:
 
 
 def main() -> None:
+    for _s in (sys.stdout, sys.stderr):            # Windows 에서 출력을 넘길 때 글자표가 cp949 가 되는 것 대비
+        try:
+            _s.reconfigure(encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
     host = start()
+
+    # --serve 는 서버만 띄운다. 프로그램 본체(app)를 불러오지 않으므로 라이브러리를 설치하기 전의
+    # 파이썬으로도 뜬다 — Windows 자동 점검(tests/ci_windows.py)이 setup.bat 보다 먼저 띄울 때 쓴다.
+    if len(sys.argv) > 1 and sys.argv[1] == "--serve":
+        if len(sys.argv) > 2:                      # --serve 20 : 답하기 전 20초 기다림 (느린 PC 흉내)
+            Handler.delay = float(sys.argv[2])
+        print(f"가짜 Ollama 대기 중: {host}   (Ctrl+C 로 종료, 지연 {Handler.delay}초)", flush=True)
+        print(f"  다른 창에서:  PM_OLLAMA_HOST={host} python -m app.main", flush=True)
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            pass
+        return
 
     from app import config
 
@@ -169,16 +191,6 @@ def main() -> None:
     from app import analyze, extract, mark, merge
 
     analyze.config.OLLAMA_HOST = config.OLLAMA_HOST
-
-    if len(sys.argv) > 1 and sys.argv[1] == "--serve":
-        if len(sys.argv) > 2:                      # --serve 20 : 답하기 전 20초 기다림 (느린 PC 흉내)
-            Handler.delay = float(sys.argv[2])
-        print(f"가짜 Ollama 대기 중: {host}   (Ctrl+C 로 종료, 지연 {Handler.delay}초)")
-        print(f"  다른 창에서:  PM_OLLAMA_HOST={host} python -m app.main")
-        try:
-            threading.Event().wait()
-        except KeyboardInterrupt:
-            return
 
     src = sys.argv[1] if len(sys.argv) > 1 else "samples/회사보고자료_예시.pptx"
     dst = sys.argv[2] if len(sys.argv) > 2 else "out_mock.pptx"
