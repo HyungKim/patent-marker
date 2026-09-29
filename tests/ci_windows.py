@@ -2,10 +2,11 @@
 tests/ci_windows.py ─ Windows 에서 설치·실행·점검이 끝까지 되는지 자동 확인
 =====================================================================
 회사 PC 와 같은 Windows 에서 실제로 돌려 보기 위한 스크립트입니다. GitHub 의 Windows 서버(Actions)가
-저장소를 내려받아 이 파일을 실행합니다 (.github/workflows/windows-check.yml).
-회사 PC 에서 직접 돌릴 일은 없습니다.
+회사 PC 와 같은 방법(Download ZIP → 압축 풀기 → C:\\patent_marker)으로 받아 이 파일을 실행합니다
+(.github/workflows/windows-check.yml). 회사 PC 에서 직접 돌릴 일은 없습니다.
 
   진짜 Ollama 와 모델(5GB) 대신 가짜 Ollama(tests/mock_llm.py)를 11434 포트에 띄워 놓고
+    0) 받은 파일      한글 이름 파일이 그대로 풀렸는지, 배치 파일 줄바꿈이 Windows 식(CRLF)인지
     1) setup.bat      설치 — 가상환경, 라이브러리, Ollama·모델 확인까지
     2) 점검 스크립트   tests/test_*.py 전부 + smoke.py  (출력 글자표는 한국어 Windows 처럼 cp949)
     3) mark.bat       파일을 아이콘에 끌어다 놓은 것처럼 (공백·한글 경로, PPTX 와 PDF)
@@ -171,6 +172,15 @@ def main() -> int:
         if not note(f"준비: 가짜 Ollama 가 {MOCK_PORT} 에서 응답",
                     wait_http(f"http://127.0.0.1:{MOCK_PORT}/api/tags", 30)):
             return finish(info, libs)
+
+        # ── 0. 받은 파일 상태 ────────────────────────────────────────
+        named = ["samples/회사보고자료_예시.pptx", "docs/00_Windows_따라하기_가이드.md", "★먼저읽기_Windows_설치순서.txt"]
+        lost = [n for n in named if not (ROOT / n).is_file()]
+        note("받은 파일: 한글 이름 파일이 그대로 있음", not lost, "없음: " + ", ".join(lost) if lost else f"{len(named)}개 확인")
+        bats = sorted(ROOT.glob("*.bat"))
+        bare = [b.name for b in bats if b.read_bytes().replace(b"\r\n", b"").count(b"\n")]
+        note("받은 파일: 배치 파일 줄바꿈이 모두 CRLF", len(bats) >= 4 and not bare,
+             "LF 섞임: " + ", ".join(bare) if bare else ", ".join(b.name for b in bats))
 
         # ── 1. setup.bat ────────────────────────────────────────────
         vpy = VPY
