@@ -7,9 +7,11 @@ tests/ci_windows.py ─ Windows 에서 설치·실행·점검이 끝까지 되�
 
   진짜 Ollama 와 모델(5GB) 대신 가짜 Ollama(tests/mock_llm.py)를 11434 포트에 띄워 놓고
     0) 받은 파일      한글 이름 파일이 그대로 풀렸는지, 배치 파일 줄바꿈이 Windows 식(CRLF)인지
-    1) setup.bat      설치 — 가상환경, 라이브러리, Ollama·모델 확인까지
-    2) 점검 스크립트   tests/test_*.py 전부 + smoke.py  (출력 글자표는 한국어 Windows 처럼 cp949)
-    3) mark.bat       파일을 아이콘에 끌어다 놓은 것처럼 (공백·한글 경로, PPTX 와 PDF)
+    1) setup.bat      설치 — 가상환경, 라이브러리, Ollama·모델 확인까지.
+                      이어서 PDF 라이브러리 둘을 지운 뒤 다시 실행 (예전 판에서 올라오는 PC 의 업데이트 경로)
+    2) 점검 스크립트   tests/test_*.py 전부 + smoke.py  (출력 글자표는 한국어 Windows 처럼 cp949,
+                      임시 폴더는 한글 사용자 이름처럼 한글·공백이 든 경로)
+    3) mark.bat       탐색기가 파일을 끌어다 놓을 때 만드는 명령줄 그대로 (공백·한글·괄호·& 가 든 이름, PPTX 와 PDF)
     4) run.bat        웹 서버를 띄워 경로 입력·업로드로 분석, 결과 내려받기
   를 차례로 돌리고 결과 표를 남깁니다.
 
@@ -48,7 +50,7 @@ WEB_PORT = 8765 if WIN else 8791
 TMP = ROOT / "ci_tmp"
 TESTS = ["test_filter", "smoke", "test_review", "test_eval", "test_memory", "test_local_input",
          "test_model_call", "test_pdf", "test_prehl", "test_cp949"]
-RESULTS: list[tuple[str, bool, str]] = []
+RESULTS: list[tuple[str, bool | None, str]] = []     # 결과가 None 이면 '참고' (통과·실패로 세지 않음)
 
 # `where ollama` 와 `ollama list` 에 답하는 가짜 명령. 서버 자리는 아래에서 파이썬으로 따로 띄운다.
 STUB = """@echo off
@@ -63,10 +65,22 @@ exit /b 0
 """
 
 
-def note(name: str, ok: bool, detail: str = "") -> bool:
-    RESULTS.append((name, bool(ok), detail))
-    print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""), flush=True)
+def note(name: str, ok: bool | None, detail: str = "") -> bool:
+    RESULTS.append((name, None if ok is None else bool(ok), detail))
+    mark = "INFO" if ok is None else ("PASS" if ok else "FAIL")
+    print(f"{mark}  {name}" + (f"  ({detail})" if detail else ""), flush=True)
     return bool(ok)
+
+
+def drop(bat: str, paths: list[Path], vpy: Path) -> list[str] | str:
+    """탐색기가 파일을 배치 파일 위에 끌어다 놓을 때 만드는 명령줄. 공백이 든 경로만 따옴표로 감싼다.
+
+    Windows 가 아니면 배치 파일이 부르는 파이썬 명령으로 바꾼다.
+    """
+    if not WIN:
+        return [str(vpy), "-m", "app.cli", *map(str, paths)]
+    args = " ".join(f'"{p}"' if " " in str(p) else str(p) for p in paths)
+    return f'cmd /c ""{ROOT / bat}" {args}"'
 
 
 def decode(raw: bytes) -> str:
@@ -84,8 +98,10 @@ def decode(raw: bytes) -> str:
     return "\n".join(lines)
 
 
-def run(cmd: list[str], env: dict, timeout: int, label: str) -> tuple[int, str]:
+def run(cmd: list[str] | str, env: dict, timeout: int, label: str) -> tuple[int, str]:
     print(f"\n{'─' * 20} {label} {'─' * 20}", flush=True)
+    if isinstance(cmd, str):
+        print(cmd, flush=True)
     try:
         p = subprocess.run(cmd, cwd=str(ROOT), env=env, stdin=subprocess.DEVNULL,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
@@ -93,6 +109,10 @@ def run(cmd: list[str], env: dict, timeout: int, label: str) -> tuple[int, str]:
     except subprocess.TimeoutExpired as e:
         rc, raw = -9, (e.stdout or b"") + "\n[시간 초과]".encode("utf-8")
     out = decode(raw)
+    if len(out) > 5000:                          # 잘린 앞부분에 실패 줄이 있으면 그것만은 보여 준다
+        for ln in out[:-5000].splitlines():
+            if ln.startswith("FAIL"):
+                print(ln, flush=True)
     print(out[-5000:], flush=True)
     return rc, out
 
@@ -192,23 +212,40 @@ def main() -> int:
             steps = [k for k in ("[1/5]", "[2/5]", "[3/5]", "[4/5]", "[5/5]", "[5/5-2]", "[5/5-3]", "설치 완료") if k in out]
             note("setup.bat: 다섯 단계와 '설치 완료' 가 한글로 찍힘", len(steps) == 8 and "가상환경" in out, " ".join(steps))
             note("setup.bat: 모델 셋을 '이미 있음' 으로 인식", out.count("이미 있음") >= 3, f"{out.count('이미 있음')}회")
+            # 2026-09-28 이전 판에서 올라오는 PC: 가상환경은 있고 PDF 라이브러리 둘만 없다 → setup.bat 재실행으로 채워지는지
+            if vpy.exists():
+                run([str(vpy), "-m", "pip", "uninstall", "-y", "pdfminer.six", "pypdf"], env, 300, "업데이트 흉내: PDF 라이브러리 지우기")
+                rc, out = run([str(vpy), "-c", "import pdfminer, pypdf"], env, 60, "지워졌는지")
+                gone = rc != 0
+                t0 = time.time()
+                rc, out = run(["cmd", "/c", "setup.bat"], env, 1800, "setup.bat (다시 실행)")
+                took = time.time() - t0
+                rc2, _ = run([str(vpy), "-c", "import pdfminer, pypdf"], env, 60, "다시 들어왔는지")
+                note("setup.bat 재실행: 빠진 PDF 라이브러리 둘을 채움 (업데이트 경로)",
+                     gone and rc == 0 and rc2 == 0 and "설치 완료" in out, f"종료 코드 {rc} · {took:.0f}초")
         if not vpy.exists():
             note("준비: 가상환경의 파이썬", False, str(vpy))
             return finish(info, libs)
         rc, out = run([str(vpy), "-c",
                        "import importlib.metadata as m; print(' · '.join(f'{n} {m.version(n)}' for n in "
                        "('python-pptx','lxml','fastapi','uvicorn','python-multipart','pdfminer.six','pypdf','cryptography')))"],
-                      env, 120, "설치된 라이브러리")
+                      {**env, "PYTHONIOENCODING": "utf-8"}, 120, "설치된 라이브러리")
         libs = out.strip().splitlines()[-1] if rc == 0 and out.strip() else ""
         note("라이브러리: PDF 용 둘(pdfminer.six · pypdf)까지 설치됨", "pdfminer.six 20250506" in libs and "pypdf 6.1.3" in libs, libs)
 
         # ── 2. 점검 스크립트 (출력 글자표를 한국어 Windows 처럼) ──────────
+        # 임시 폴더: 사용자 이름이 한글인 PC 의 C:\Users\홍길동\AppData\Local\Temp 처럼 한글·공백이 든 경로
+        ktmp = TMP / "홍길동 임시"
+        ktmp.mkdir()
+        for e in (env, benv):
+            e.update({"TEMP": str(ktmp), "TMP": str(ktmp), "TMPDIR": str(ktmp)})
+        benv["PATH"] = env["PATH"]
         tenv = {**env, "PYTHONIOENCODING": "cp949"}
         for t in TESTS:
             rc, out = run([str(vpy), f"tests/{t}.py"], tenv, 900, f"tests/{t}.py")
             n_pass, n_fail = len(re.findall(r"^PASS", out, re.M)), len(re.findall(r"^FAIL", out, re.M))
             last = next((ln.strip() for ln in reversed(out.splitlines()) if ln.strip()), "")
-            note(f"점검 {t}", rc == 0 and n_fail == 0, f"통과 {n_pass} · 실패 {n_fail} · {last[:70]}")
+            note(f"점검 {t}", rc == 0 and n_fail == 0, f"통과 {n_pass} · 실패 {n_fail} · {last[:40]}")
 
         # ── 3. mark.bat (끌어다 놓기) ─────────────────────────────────
         work = TMP / "끌어다 놓기 시험 (공백 있음)"
@@ -217,8 +254,7 @@ def main() -> int:
         shutil.copyfile(ROOT / "samples" / "회사보고자료_예시.pptx", pptx)
         rc, out = run([str(vpy), "tools/make_sample_pdf.py", str(pptx), str(pdf)], env, 120, "점검용 PDF 만들기")
         note("준비: 점검용 PDF 생성", rc == 0 and pdf.exists())
-        mark = ["cmd", "/c", "mark.bat"] if WIN else [str(vpy), "-m", "app.cli"]
-        rc, out = run(mark + [str(pptx), str(pdf)], benv, 900, "mark.bat (파일 두 개)")
+        rc, out = run(drop("mark.bat", [pptx, pdf], vpy), benv, 900, "mark.bat (파일 두 개)")
         o1, o2 = work / "보고서 초안_특허마킹.pptx", work / "변환본_특허마킹.pdf"
         note("mark.bat: 끝까지 실행 (종료 코드 0)", rc == 0, f"종료 코드 {rc}")
         note("mark.bat: 원본 옆에 결과 두 개 저장 (공백·한글 경로)", o1.exists() and o2.exists(),
@@ -232,6 +268,25 @@ def main() -> int:
         nums = re.findall(r"\d+", out.strip().splitlines()[-1]) if rc == 0 and out.strip() else []
         note("mark.bat 결과: PPTX 와 PDF 에 형광펜이 들어 있음", len(nums) == 2 and int(nums[0]) > 0 and int(nums[1]) > 0,
              f"PPTX 형광펜 런 {nums[0] if nums else '?'} · PDF 주석 {nums[1] if len(nums) > 1 else '?'}")
+
+        # 이름에 괄호·&·% 가 든 파일 (회사 문서에 흔한 이름). 공백이 없으면 탐색기는 따옴표 없이 넘긴다
+        names = TMP / "이름시험"
+        names.mkdir()
+        paren, amp_sp, amp = names / "보고서(최종).pptx", names / "R&D 현황 50%.pptx", names / "R&D현황.pptx"
+        for f in (paren, amp_sp, amp):
+            shutil.copyfile(pptx, f)
+        rc, out = run(drop("mark.bat", [paren], vpy), benv, 900, "mark.bat 보고서(최종).pptx — 따옴표 없이")
+        note("mark.bat: 괄호가 든 이름 (따옴표 없이 넘어옴)", (names / "보고서(최종)_특허마킹.pptx").exists())
+        rc, out = run(drop("mark.bat", [amp_sp], vpy), benv, 900, "mark.bat \"R&D 현황 50%.pptx\"")
+        note("mark.bat: & 와 % 와 공백이 든 이름", (names / "R&D 현황 50%_특허마킹.pptx").exists())
+        if WIN:
+            rc, out = run(drop("mark.bat", [amp], vpy), benv, 900, "mark.bat R&D현황.pptx — 따옴표 없이")
+            ok_amp = (names / "R&D현황_특허마킹.pptx").exists()
+            msg = next((ln.strip() for ln in out.splitlines() if "찾을 수 없" in ln or "recognized" in ln or "인식" in ln), "")
+            note("참고 — mark.bat: & 가 있고 공백이 없는 이름", None,
+                 "처리됨" if ok_amp else f"처리 안 됨 (Windows 가 & 에서 이름을 자름) {msg[:60]}")
+            rc, out = run("cmd /c mark.bat", benv, 120, "mark.bat (파일 없이 더블클릭)")
+            note("mark.bat: 파일 없이 실행하면 사용법을 알리고 끝남", rc == 1 and "끌어다" in out, f"종료 코드 {rc}")
 
         # ── 4. run.bat (웹 서버) ─────────────────────────────────────
         log = open(TMP / "run_bat.log", "wb")
@@ -253,6 +308,11 @@ def main() -> int:
             note("run.bat: 경로로 넣은 PPTX 분석 완료", snap.get("status") == "done", str(snap.get("error") or snap.get("stage")))
             outs = sorted(p.name for p in out_dir.glob("*특허마킹*"))
             note("run.bat: output 폴더에 결과 저장", any(n.endswith(".pptx") for n in outs), ", ".join(outs))
+            st, _, raw = get(base + "/api/local/jobs", 60, {"Content-Type": "application/json", "X-PM-Token": token},
+                             json.dumps({"path": f'"{amp}"', "model": "qwen3:8b"}).encode("utf-8"))
+            snap = wait_job(base, json.loads(raw)["job_id"])
+            note("run.bat: 경로 입력은 & 가 든 이름도 됨 (따옴표째 붙여넣기)", snap.get("status") == "done"
+                 and (out_dir / "R&D현황_특허마킹.pptx").exists(), str(snap.get("error") or snap.get("stage")))
             b = "----pmci"
             body = (f"--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"업로드 시험.pdf\"\r\n"
                     f"Content-Type: application/pdf\r\n\r\n").encode("utf-8") + pdf.read_bytes() + f"\r\n--{b}--\r\n".encode()
@@ -283,19 +343,20 @@ def main() -> int:
 
 
 def finish(info: list[str], libs: str) -> int:
-    bad = [r for r in RESULTS if not r[1]]
-    lines = [f"## Windows 점검 — {'모두 통과' if not bad else f'실패 {len(bad)}건'} ({len(RESULTS) - len(bad)}/{len(RESULTS)})",
+    bad = [r for r in RESULTS if r[1] is False]
+    counted = [r for r in RESULTS if r[1] is not None]
+    lines = [f"## Windows 점검 — {'모두 통과' if not bad else f'실패 {len(bad)}건'} ({len(counted) - len(bad)}/{len(counted)})",
              "", " · ".join(info), "", f"설치된 라이브러리: {libs}" if libs else "", "",
              "| 결과 | 항목 | 내용 |", "|---|---|---|"]
     for name, ok, detail in RESULTS:
-        lines.append(f"| {'통과' if ok else '**실패**'} | {name} | {detail.replace('|', '/')} |")
+        lines.append(f"| {'참고' if ok is None else '통과' if ok else '**실패**'} | {name} | {detail.replace('|', '/')} |")
     text = "\n".join(lines) + "\n"
     print("\n" + text, flush=True)
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if path:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(text)
-    return 1 if bad or not RESULTS else 0
+    return 1 if bad or not counted else 0
 
 
 if __name__ == "__main__":

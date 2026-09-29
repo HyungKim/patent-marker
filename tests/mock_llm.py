@@ -131,13 +131,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(f"{len(raw):x}\r\n".encode() + raw + b"\r\n")
                 self.wfile.flush()
             self.wfile.write(b"0\r\n\r\n")
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:       # BrokenPipe·Reset, Windows 는 ConnectionAborted(10053)
             pass                      # 클라이언트가 [중단] 으로 먼저 끊은 경우 — 정상
 
     def handle(self):
         try:
             super().handle()
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:
             pass
 
 

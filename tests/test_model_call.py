@@ -117,15 +117,15 @@ config.OLLAMA_HOST = saved
 # 감시 스레드가 실제로 끊는지: 호출 중에 주소를 죽은 포트로 바꿔 '서버 사라짐' 을 흉내 낸다
 old_every, old_fails = analyze._PING_EVERY, analyze._PING_FAILS
 analyze._PING_EVERY, analyze._PING_FAILS = 0.3, 2
-mock_llm.Handler.delay = 8
+mock_llm.Handler.delay = 12
 t = time.time()
 threading.Timer(0.5, lambda: setattr(config, "OLLAMA_HOST", "http://127.0.0.1:1")).start()
 try:
     call()
     check("서버 사라짐 감지 → OllamaError", False, "예외가 없었다")
 except analyze.OllamaError as e:
-    # Windows 는 닫힌 포트의 '연결 거부' 를 아는 데 2초쯤 걸린다 (두 번이면 5초 남짓) → 8초보다 짧으면 된다
-    check("서버 사라짐 감지 → 8초 지연을 기다리지 않고 OllamaError", "사라져" in str(e) and time.time() - t < 7,
+    # Windows 는 닫힌 포트의 '연결 거부' 를 아는 데 2초쯤 걸린다 (두 번이면 5~6초) → 지연 12초보다 확실히 짧으면 된다
+    check("서버 사라짐 감지 → 12초 지연을 기다리지 않고 OllamaError", "사라져" in str(e) and time.time() - t < 10,
           f"{time.time() - t:.1f}초")
 finally:
     config.OLLAMA_HOST = saved
