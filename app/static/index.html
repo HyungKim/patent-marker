@@ -168,9 +168,9 @@
   .plog{font:12px/1.7 ui-monospace,Consolas,monospace;color:var(--muted);background:var(--panel2,transparent);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:10px 0 0;max-height:150px;overflow:auto;white-space:pre-wrap}
   .speed{font-size:12.5px;color:var(--muted);margin:-6px 0 14px;white-space:pre-line}
   .tag.M{background:#e8f5e9;color:#1b5e20;border-color:#a5d6a7}
-  #optModel{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:inherit}
+  #optModel,#optMode{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:inherit}
   .mnote{font-size:12px;color:var(--muted);max-width:520px}
-  #modelWrap{flex-wrap:wrap}
+  #modelWrap,#modeWrap{flex-wrap:wrap}
 
   /* ── 결과 ───────────────────────────────────────────────── */
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
@@ -255,8 +255,11 @@
     </div>
     <div class="picked none" id="picked">아직 고른 파일이 없습니다.</div>
     <div class="row" style="margin-top:14px">
+      <!-- 판정 기준: health() 가 /api/health 의 mode_choices 로 채운다. 기준을 바꾸면 '전체 문단 검사' 기본값도 따라간다 -->
+      <label class="opt" id="modeWrap" title="확실한 것만 = 구체적 수단이 적힌 문장과 공개가 명시된 문장만 표시하고 사전에 걸린 문단만 검사 (기본, 빠름). 빠짐없이 = 존재가 시사되는 표현까지 넓게 (2026-09-30b 까지의 동작)">
+        <span style="white-space:nowrap">판정 기준</span> <select id="optMode"></select><span class="mnote" id="modeNote"></span></label>
       <!-- 모델 선택: health() 가 /api/health 의 choices 로 채운다. 내려받지 않은 모델은 고를 수 없게 막는다 -->
-      <label class="opt" id="modelWrap" title="정밀 = 후보를 빠짐없이(기본). 빠름 = 약 3배 빠르지만 후보를 1/3 덜 잡고 A 등급이 없음 — 급한 문서의 초벌용">
+      <label class="opt" id="modelWrap" title="정밀(8b) = 기본. 빠름(4b) = 약 2배 빠르지만 판정이 거칠어 '확실한 것만' 에서도 표 조각·숫자를 A 로 올리는 일이 잦음 — 초벌용">
         <span style="white-space:nowrap">모델</span> <select id="optModel"></select><span class="mnote" id="modelNote"></span></label>
       <label class="opt" id="learnWrap" title="검토 반영으로 쌓인 교정을 분석에 되살립니다: 같은 문단은 사람 판정 그대로(문단 기억), 지운 표현은 제외, 추가한 표현은 자동 규칙, 비슷한 확정 사례를 모델에게 보여 줌">
         <input type="checkbox" id="optLearn" checked> 검토 학습 적용<span class="mnote" id="learnNote"></span></label>
@@ -265,7 +268,7 @@
       <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
       <label class="opt" title="작성자가 강조하려고 칠해 둔 형광펜을 걷어내고 분석합니다. 원본 파일은 그대로이고, 마킹본에는 도구와 검토자의 형광펜만 남습니다. 끄면 작성자 형광펜이 검토 반영 때 검토자가 칠한 것으로 읽힐 수 있습니다">
         <input type="checkbox" id="optStrip" checked> 원본 형광펜 지우고 시작</label>
-      <label class="opt"><input type="checkbox" id="optScanAll" checked> 전체 문단 검사</label>
+      <label class="opt" title="사전에 걸리지 않은 문단도 모델에 보냅니다. 확실한 것만 에서는 기본 끔(빠름), 빠짐없이 에서는 기본 켬"><input type="checkbox" id="optScanAll"> 전체 문단 검사<span class="mnote" id="scanNote"></span></label>
       <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
       <div class="grow"></div>
       <button id="go" disabled>분석 시작</button>
@@ -452,6 +455,23 @@ function fillModels(choices){
 }
 const chosenModel = () => $("#optModel").value || "";
 
+// ── 판정 기준: 확실한 것만(strict, 기본) / 빠짐없이(broad). 기준을 바꾸면 '전체 문단 검사' 체크를 기준별 기본값으로 맞춘다 ──
+let scanAllDefaults = {strict:false, broad:true};
+let scanTouched = false;                       // 사용자가 체크박스를 직접 만졌으면 그 뒤로는 건드리지 않는다
+function fillModes(choices, def){
+  const sel = $("#optMode");
+  const keep = sel.value;
+  sel.innerHTML = choices.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join("");
+  sel.value = (keep && choices.some(c => c.id === keep)) ? keep : (def || (choices[0] && choices[0].id) || "strict");
+  const note = () => { const c = choices.find(x => x.id === sel.value); $("#modeNote").textContent = c ? c.note : ""; };
+  const syncScan = () => { if(!scanTouched){ $("#optScanAll").checked = !!scanAllDefaults[sel.value]; }
+    $("#scanNote").textContent = $("#optScanAll").checked ? "" : "(사전에 걸린 문단만 — 빠름)"; };
+  sel.onchange = () => { note(); syncScan(); };
+  note(); syncScan();
+}
+$("#optScanAll").addEventListener("change", () => { scanTouched = true; $("#scanNote").textContent = $("#optScanAll").checked ? "" : "(사전에 걸린 문단만 — 빠름)"; });
+const chosenMode = () => $("#optMode").value || "";
+
 // ── 검토 학습 스위치: 쌓인 기억 크기와 bge-m3 설치 여부를 보여 주고, 없으면 뜻 기준 검색은 잠근다 ──
 function fillLearn(l){
   const n = (l.paras || 0) + (l.rules || 0) + (l.excludes || 0);
@@ -481,6 +501,8 @@ async function health(){
     }
     $("#hdot").className = "dot ok";
     $("#htext").innerHTML = `온디바이스 모델 <code>${h.model}</code> 준비됨 · 오프라인 동작`;
+    if(h.scan_all_default) scanAllDefaults = h.scan_all_default;
+    fillModes(h.mode_choices || [{id:"strict", label:"확실한 것만", note:""}, {id:"broad", label:"빠짐없이", note:""}], h.mode_default);
     fillModels(h.choices || []);
     fillLearn(h.learn || {});
     if(h.strip_default === false) $("#optStrip").checked = false;   // 환경 변수 PM_STRIP_HL=0 이면 기본 해제
@@ -619,6 +641,7 @@ $("#go").onclick = async () => {
   $("#go").disabled = true;
   const think = $("#optThink").checked, scan_all = $("#optScanAll").checked, tag_marks = $("#optTag").checked;
   const model = chosenModel();           // 정밀(8b) / 빠름(4b) — 비어 있으면 서버 기본값
+  const mode = chosenMode();             // 확실한 것만 / 빠짐없이
   const learn = $("#optLearn").checked, learn_embed = $("#optEmbed").checked;
   const strip_hl = $("#optStrip").checked;
   try{
@@ -626,6 +649,7 @@ $("#go").onclick = async () => {
       const fd = new FormData();           // 파일 업로드용 묶음
       fd.append("file", selected.file);
       if(model) fd.append("model", model);
+      if(mode) fd.append("mode", mode);
       fd.append("think", think); fd.append("scan_all", scan_all); fd.append("tag_marks", tag_marks);
       fd.append("learn", learn); fd.append("learn_embed", learn_embed); fd.append("strip_hl", strip_hl);
       let r;
@@ -635,7 +659,7 @@ $("#go").onclick = async () => {
       if(!r.ok) throw new Error(j.detail || "업로드 실패 (이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요)");
       jobId = j.job_id;
     } else {
-      const j = await lapi("/api/local/jobs", {path:selected.path, model, think, scan_all, tag_marks, learn, learn_embed, strip_hl});
+      const j = await lapi("/api/local/jobs", {path:selected.path, model, mode, think, scan_all, tag_marks, learn, learn_embed, strip_hl});
       jobId = j.job_id;
     }
   }catch(e){ showPickError(e.message); return; }   // 시작 전 오류는 그 자리에서 보여 주고 머문다
@@ -713,7 +737,7 @@ function render(st){
   ].map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
   // 속도 성적표: 개선 전후 비교의 근거. 같은 내용이 review_data\run_log.tsv 에도 한 줄로 쌓인다.
   $("#speed").textContent = st.speed_text
-    ? `이번 실행: ${st.speed_text} · 모델 호출 ${st.calls}회 · 인용구 일치 ${st.quote_located} · ${st.model} · 버전 ${st.version}  (review_data\\run_log.tsv 에 기록됨)`
+    ? `이번 실행: ${st.speed_text} · 모델 호출 ${st.calls}회 · 인용구 일치 ${st.quote_located} · ${st.model}${st.mode_text ? ` · 판정 기준 ${st.mode_text}` : ""} · 버전 ${st.version}  (review_data\\run_log.tsv 에 기록됨)`
       + (st.learn_text ? `\n검토 학습: ${st.learn_text}` : "")
       + (st.prehl_text ? `\n${st.prehl_text}` : "")
     : (st.prehl_text || "");
@@ -1008,6 +1032,7 @@ function changesText(e){
   if(c.examples_delta) parts.push(`쌓인 예시 ${c.examples_delta>0?"+":""}${c.examples_delta}`);
   if(c.dataset_delta) parts.push(`교정 데이터 ${c.dataset_delta>0?"+":""}${c.dataset_delta}건`);
   if(c.model_change) parts.push(`모델 ${esc(c.model_change)}`);
+  if(c.mode_change) parts.push(`<b>판정 기준 ${esc(c.mode_change)} (프롬프트 변경 — 회차 비교 주의)</b>`);
   return parts.length ? parts.join(" · ") : "설정 변경 없음";
 }
 
