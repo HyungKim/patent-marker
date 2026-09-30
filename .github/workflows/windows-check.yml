@@ -35,3 +35,24 @@ jobs:
         shell: pwsh
         working-directory: 'C:\patent_marker'
         run: python tests/ci_windows.py
+      - name: 'Move the installed folder to D:\patent_marker (company PC moving to another drive)'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'D:\')) { New-Item -ItemType Directory -Path 'C:\pm_drive_d' | Out-Null; subst D: 'C:\pm_drive_d'; Write-Host 'D: made with subst' }
+          try { Move-Item -Path 'C:\patent_marker' -Destination 'D:\patent_marker' -ErrorAction Stop } catch { Write-Host "Move-Item: $_" }
+          if (-not (Test-Path 'D:\patent_marker\run.bat')) {
+            robocopy 'C:\patent_marker' 'D:\patent_marker' /E /MOVE /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "robocopy failed: $LASTEXITCODE" }
+            $global:LASTEXITCODE = 0
+          }
+          if (Test-Path 'C:\patent_marker') {
+            Get-ChildItem -Path 'C:\patent_marker' -Recurse -File | Select-Object -First 20 -ExpandProperty FullName
+            throw 'C:\patent_marker still exists after the move'
+          }
+          Get-ChildItem -Path 'D:\patent_marker' | Format-Table Name, Length
+      - name: 'Run Windows check again from D:'
+        shell: pwsh
+        working-directory: 'D:\patent_marker'
+        env:
+          PM_OLD_ROOT: 'C:\patent_marker'
+        run: python tests/ci_windows.py --moved
