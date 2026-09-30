@@ -22,8 +22,10 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
 2. `run.bat` 더블클릭 ─ 브라우저가 열립니다. PPTX 또는 PDF 를 `input` 폴더에 복사하면 화면 목록에 나타납니다.
    클릭하고 **분석 시작**. (경로 붙여넣기 · [찾기…] · 브라우저 업로드로도 넣을 수 있습니다 — 아래 "파일을 넣는 네 가지 방법")
    - 기본 모델은 가벼운 qwen3:8b 라 GPU 없는 PC·메모리 16GB 에서도 실용적입니다.
-   - 화면의 **모델: 정밀 / 빠름** — 정밀(qwen3:8b)이 기본. 빠름(qwen3:4b-instruct)은 약 3배 빠르지만 후보를 1/3 덜 잡고
-     A 등급을 못 매기므로 급한 문서의 초벌용입니다 (실측은 `docs/05_개선_이력.md`). 명령행은 `mark.bat` 대신 `python -m app.cli 파일 --fast`.
+   - 화면의 **판정 기준: 확실한 것만 / 빠짐없이** (2026-10-01) — 기본은 **확실한 것만**: 구체적 기술 수단이 문장에 적힌 곳(A)과 외부 공개가
+     명시된 곳(C)만 칠하고, 사전에 걸린 문단만 검사해 약 3배 빠릅니다. "빠짐없이" 는 존재가 시사되는 표현(B)까지 넓게 (2026-09-30b 까지의 동작).
+   - 화면의 **모델: 정밀 / 빠름** — 정밀(qwen3:8b)이 기본. 빠름(qwen3:4b-instruct)은 약 2배 빠르지만 후보를 덜 잡습니다 (실측은 `docs/05_개선_이력.md`).
+     명령행은 `mark.bat` 대신 `python -m app.cli 파일 --fast`, 넓게 보려면 `--mode broad`.
 3. 끝나면 결과가 `output\이름_특허마킹.pptx` (PDF 는 `.pdf`) 에 저장되어 있습니다. **결과 폴더 열기** 로 바로 갑니다.
    - 브라우저 없이: PPTX·PDF 를 `mark.bat` 아이콘 위에 끌어다 놓으면 원본 옆에 결과가 생깁니다.
 
@@ -121,7 +123,7 @@ setup.*     처음 한 번 설치     run.*   실행(웹 화면)     mark.*   �
 | `출원검토필요` 표현 | `app/config.py` | `LEGEND_TITLE`(범례 제목) · `TAG_TEXT`(선택 문구) |
 | 형광펜 색 | `app/config.py` | `GRADE_COLOR` |
 | 단서 표현 추가 (업종 바뀔 때) | `app/lexicon.py` | `RULES`, `NOISE` |
-| 판정 기준 | `app/analyze.py` | `SYSTEM` |
+| 판정 기준 기본값 | `app/config.py` | `MODE` (`strict` 확실한 것만 / `broad` 빠짐없이). 지시서 문구는 `app/analyze.py` 의 `SYSTEM_STRICT` · `SYSTEM` |
 
 ---
 
@@ -139,6 +141,7 @@ setup.*     처음 한 번 설치     run.*   실행(웹 화면)     mark.*   �
 .venv/bin/python tests/test_pdf.py        # 30초 · PDF 입력: 읽기·형광펜 주석·검토본 읽기·검토 시뮬레이션·명령행·웹 (점검용 PDF 는 스스로 만듦)
 .venv/bin/python tests/test_prehl.py      # 30초 · 원본 형광펜 정리: 지우기·글자색 보정·끄기·재분석·PDF 주석 삭제·굳은 형광펜 덮기
 .venv/bin/python tests/test_cp949.py      # 20초 · 한국어 Windows 출력 글자표(cp949)로도 멈추지 않는지
+.venv/bin/python tests/test_mode.py       # 30초 · 판정 기준 확실한 것만/빠짐없이: 지시서·사전·병합·묶음 호출·명령행·화면
 .venv/bin/python tests/e2e.py             # 수 분 · 진짜 모델
 ```
 (Windows 는 `.venv\Scripts\python` 로 바꿔 실행)
