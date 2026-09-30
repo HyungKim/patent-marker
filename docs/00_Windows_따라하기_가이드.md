@@ -245,6 +245,7 @@
     - 얼마나 좋아졌는지 숫자로 재서 보고하려면  →  docs\04_성능_측정.md
     - 새 버전이 나왔을 때 바꾸는 방법  →  아래 [7-1]
     - 파일을 넣는 네 가지 방법과 mark.bat  →  아래 [7-2]
+    - C: 가 꽉 차서 D: 등 다른 드라이브로 옮기기  →  아래 [7-3]
 
 
 ════════════════════════════════════════════════════════════════════
@@ -440,6 +441,57 @@
 
 
 ════════════════════════════════════════════════════════════════════
+[7-3] 다른 드라이브(D:)로 옮기기 — C: 가 꽉 찼을 때
+════════════════════════════════════════════════════════════════════
+
+  프로그램은 어느 드라이브에 두어도 됩니다. 폴더 안의 파일들은 서로의 상대 위치만 보므로
+  C:\patent_marker 를 D:\patent_marker 로 옮겨도 그대로 돕니다 (2026-09-30b 판에서 Windows 서버로 확인).
+  이 문서에 적힌 C:\patent_marker 는 옮긴 뒤 D:\patent_marker 로 읽으면 됩니다.
+
+  먼저 알아 둘 것 — C: 를 차지하는 것은 프로그램 폴더가 아닙니다.
+
+     프로그램 폴더 (C:\patent_marker, .venv 포함)               0.2~0.5GB  (input·output 에 넣어 둔 문서만큼 더)
+     모델 파일 (C:\Users\본인이름\.ollama\models)               약 9GB     ← 가장 큼 (qwen3:8b 5.2 + qwen3:4b-instruct 2.5 + bge-m3 1.2)
+     Ollama 프로그램 (…\AppData\Local\Programs\Ollama)          1~2GB
+     Python (…\AppData\Local\Programs\Python\Python312)        약 0.15GB
+     pip 캐시 (…\AppData\Local\pip\cache)                      0.1GB 안팎 (지워도 됨)
+
+     프로그램 폴더만 옮기면 1GB 도 안 줄어듭니다. C: 를 비우는 것이 목적이면 ②(모델 파일 옮기기)까지 하세요.
+
+  ① 프로그램 폴더 옮기기 (5분)
+     1. 프로그램을 완전히 끕니다: 브라우저 탭을 닫고, 검은 창을 클릭한 뒤 Ctrl + C → Y → 창을 X 로 닫습니다.
+     2. 작업 표시줄 구석의 Ollama 아이콘을 우클릭 → Quit Ollama.
+        (2026-09-30b 이전 판의 run.bat·mark.bat 이 켠 Ollama 는 이 폴더를 붙들고 있어서, 끄지 않으면 옮겨지지 않습니다)
+     3. 탐색기에서 C:\patent_marker 를 클릭 → Ctrl + X (잘라내기) → D:\ 를 열고 Ctrl + V (붙여넣기).
+        복사가 끝나면 C: 에서는 사라지고 D:\patent_marker 가 됩니다. review_data · input · output · .venv 전부 함께 갑니다.
+        "다른 프로그램에서 열려 있어…" 라며 옮겨지지 않으면 → "문제가 생기면" 의 AD 항목.
+     4. D:\patent_marker\run.bat 더블클릭 → 화면이 뜨고 제목 옆 버전이 보이면 끝입니다.
+        바탕화면에 만들어 둔 바로 가기가 있으면 새 자리의 run.bat 으로 다시 만듭니다 (run.bat 우클릭 → 바로 가기 만들기).
+     setup.bat 을 다시 돌릴 필요는 없습니다. 파이썬 설치(.venv)도 옮긴 자리에서 그대로 동작합니다.
+     (VS Code 로 코드를 보는 경우에만: .venv 안의 activate 파일이 옛 경로를 기억하고 있어 터미널 활성화가 이상하면
+      .venv 폴더를 지우고 setup.bat 을 한 번 실행하세요. 1~2분이면 다시 만들어집니다)
+
+  ② 모델 파일 옮기기 (C: 약 9GB 확보, 10분)
+     Ollama 는 OLLAMA_MODELS 라는 설정값이 가리키는 폴더에서 모델을 찾습니다. 그 값을 D: 로 정하고 파일을 옮기면 됩니다.
+     1. 작업 표시줄의 Ollama 아이콘 우클릭 → Quit Ollama. (검은 창도 닫혀 있어야 합니다)
+     2. D:\ollama\models 폴더를 만듭니다.
+     3. 탐색기 주소창에  %USERPROFILE%\.ollama\models  를 입력해 열고, 안에 있는 blobs 와 manifests 두 폴더를
+        Ctrl + X → D:\ollama\models 에 Ctrl + V. (5~10분. 끝나면 D:\ollama\models\blobs 와 D:\ollama\models\manifests 가 있어야 합니다)
+     4. 시작 → cmd → 아래 한 줄을 입력하고 엔터 (사용자 환경 변수로 저장됩니다. 한 번만 하면 됩니다):
+           setx OLLAMA_MODELS "D:\ollama\models"
+        같은 것을 설정 창으로 하려면: 설정 → 시스템 → 정보 → 고급 시스템 설정 → 환경 변수 → "사용자 변수" 의 새로 만들기 →
+        변수 이름 OLLAMA_MODELS, 변수 값 D:\ollama\models → 확인.
+     5. 그 cmd 창을 닫고 새 cmd 창을 열어  ollama list  를 입력 → qwen3:8b 등이 보이면 끝입니다.
+        (새 창을 열어야 바뀐 값이 적용됩니다. 안 보이면 → "문제가 생기면" 의 AE 항목)
+     6. run.bat 더블클릭. 화면 상단이 초록 점이면 됩니다. 이후 setup.bat 을 다시 돌려도 모델은 새 위치에 받습니다.
+     ※ 최근 Ollama 앱은 설정 창에 모델 저장 위치 항목이 있을 수 있습니다. 있으면 그것으로 바꿔도 됩니다. 위 방법은 어느 판에서나 됩니다.
+
+  되돌리기
+     ① 은 폴더를 다시 C:\ 로 잘라내기·붙여넣기.
+     ② 는 새 cmd 창에서  setx OLLAMA_MODELS ""  (값을 비우면 기본 위치를 씁니다) → blobs·manifests 를 %USERPROFILE%\.ollama\models 로 되돌리기 → Ollama 다시 시작.
+
+
+════════════════════════════════════════════════════════════════════
 [8] (선택) VS Code 로 코드 보기
 ════════════════════════════════════════════════════════════════════
 
@@ -477,7 +529,7 @@
      → 모델 복사가 안 된 것입니다. setup_offline.bat 을 한 번 더 실행하면 [4/5] 에서 다시 복사합니다.
        (GitHub 에서 받아 setup.bat 으로 설치한 경우: setup.bat 을 다시 실행하면 모델을 내려받습니다)
        확인 방법: 파일 탐색기 주소창에  %USERPROFILE%\.ollama\models\manifests  입력 →
-       registry.ollama.ai\library\qwen3 안에 8b 파일이 있어야 합니다.
+       registry.ollama.ai\library\qwen3 안에 8b 파일이 있어야 합니다. ([7-3] 로 모델 위치를 옮겼다면 D:\ollama\models\manifests)
 
   E. "[실패] 휠 설치" 또는 "no matching distribution"
      → 이 PC 가 64비트 Windows 가 아니거나(32비트, ARM) Python 버전이 맞지 않는 경우입니다.
@@ -610,6 +662,18 @@
        그러면 & 를 "명령을 나누는 기호" 로 읽어 이름을 자릅니다. [7-1] 로 업데이트하면 잘린 이름을 되살려 처리합니다.
        업데이트 전이라면 input 폴더에 넣거나 화면의 "경로 붙여넣기" 를 쓰세요 (이 둘은 예전 판도 됩니다).
 
+  AD. [7-3] 대로 폴더를 옮기려는데 "다른 프로그램에서 열려 있어 작업을 완료할 수 없습니다" 가 나온다
+     → 그 폴더에서 켜진 프로그램이 아직 돌고 있는 것입니다. 검은 창(run.bat·mark.bat)을 모두 닫고, 브라우저를 완전히 닫고,
+       작업 표시줄의 Ollama 를 Quit 한 뒤 다시 옮기세요. 그래도 그러면 PC 를 다시 시작한 직후(run.bat 을 켜기 전에) 옮깁니다.
+       이미 절반쯤 옮겨진 채 멈췄다면: D:\patent_marker 에 run.bat 이 있는지 보고, 있으면 C: 에 남은 빈 폴더는 지워도 됩니다.
+       (2026-09-30b 판부터는 run.bat·mark.bat 이 Ollama 와 브라우저를 다른 폴더에서 띄우므로 검은 창만 닫으면 옮겨집니다)
+
+  AE. 모델 파일을 옮겼더니  ollama list  에 아무것도 없다 / 화면에 "모델 qwen3:8b 이 없습니다"
+     → 셋 중 하나입니다. ⓐ 새 cmd 창을 열지 않아 값이 적용되지 않음: 창을 닫고 새로 여세요 (echo %OLLAMA_MODELS% 로 값 확인).
+       ⓑ 폴더 구조가 다름: D:\ollama\models 바로 안에 blobs 와 manifests 가 있어야 합니다 (한 단계 더 안쪽이면 안 됨).
+       ⓒ Ollama 를 끄지 않고 바꿈: 작업 표시줄의 Ollama 를 Quit 한 뒤 run.bat 을 다시 켜세요.
+       그래도 안 되면 "되돌리기" 대로 원래 자리로 되돌리면 예전처럼 됩니다. 옮기는 동안 파일이 지워지지는 않습니다.
+
   T. mark.bat 에 파일을 끌어다 놓았더니 "Ollama 에 연결할 수 없습니다" 로 끝난다
      → Ollama 가 켜지는 데 30초 넘게 걸린 경우입니다. 30초쯤 뒤에 다시 끌어다 놓으세요.
        계속 그러면 시작 메뉴에서 "Ollama" 를 먼저 실행한 뒤 다시 합니다 ("문제가 생기면" C 항목).
@@ -634,8 +698,9 @@
 참고 — 설치로 PC 에 생기는 것들 (나중에 지우고 싶을 때)
 ════════════════════════════════════════════════════════════════════
 
-  C:\patent_marker                                  프로그램 폴더 (지우면 끝)
-  C:\Users\본인이름\.ollama\models                  모델 파일 14GB (지우면 Ollama 가 모델을 못 찾음)
-  C:\Users\본인이름\AppData\Local\Programs\Python\Python312   Python (설정 → 앱에서 제거 가능)
-  C:\Users\본인이름\AppData\Local\Programs\Ollama            Ollama (설정 → 앱에서 제거 가능)
+  C:\patent_marker                                  프로그램 폴더, 0.2~0.5GB (지우면 끝. [7-3] 로 옮겼다면 D:\patent_marker)
+  C:\Users\본인이름\.ollama\models                  모델 파일 약 9GB — 지우면 Ollama 가 모델을 못 찾음 ([7-3] 로 옮겼다면 D:\ollama\models)
+  C:\Users\본인이름\AppData\Local\Programs\Python\Python312   Python 약 0.15GB (설정 → 앱에서 제거 가능)
+  C:\Users\본인이름\AppData\Local\Programs\Ollama            Ollama 1~2GB (설정 → 앱에서 제거 가능)
+  C:\Users\본인이름\AppData\Local\pip\cache                   pip 캐시 0.1GB 안팎 (지워도 됨)
   C:\Users\본인이름\AppData\Local\Temp\pm-*                  분석 중 임시 파일 (재부팅 시 정리)
