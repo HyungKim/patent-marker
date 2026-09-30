@@ -18,6 +18,9 @@ tests/ci_windows.py ─ Windows 에서 설치·실행·점검이 끝까지 되�
   여기서 확인하지 못하는 것: 진짜 모델의 판정과 속도, winget 으로 Ollama 를 설치하는 부분,
   브라우저 화면, PowerPoint·PDF 뷰어에서 보이는 모습, 회사 보안 프로그램의 영향.
 
+  `--moved` 를 붙이면 "설치한 폴더를 다른 드라이브로 옮긴 뒤" 를 점검합니다 (회사 PC 에서 C: 가 차서 D: 로 옮기는 경우).
+  가상환경을 지우지 않고 그대로 쓰며, 예전 자리(PM_OLD_ROOT)가 비었는지와 가상환경이 새 자리를 가리키는지를 더 봅니다.
+
   Windows 가 아닌 곳(Mac)에서 실행하면 배치 파일 대신 그 안에서 부르는 파이썬 명령을 바로 돌려
   이 스크립트 자체에 틀린 곳이 없는지만 봅니다 (설치 단계는 건너뜀, 폴더·포트는 따로 씀).
 """
@@ -44,6 +47,7 @@ for _s in (sys.stdout, sys.stderr):
 
 ROOT = Path(__file__).resolve().parents[1]
 WIN = os.name == "nt"
+MOVED = "--moved" in sys.argv[1:]              # 다른 드라이브로 옮긴 뒤의 점검
 VPY = ROOT / ".venv" / ("Scripts/python.exe" if WIN else "bin/python")
 MOCK_PORT = 11434 if WIN else 11601          # 배치 파일은 11434 만 본다. Mac 에서는 진짜 Ollama 와 겹치지 않게
 WEB_PORT = 8765 if WIN else 8791
@@ -159,6 +163,8 @@ def wait_job(base: str, job: str, seconds: float = 180) -> dict:
 def main() -> int:
     if not WIN:
         print("Windows 가 아닙니다 — 배치 파일은 건너뛰고 같은 파이썬 명령으로 이 스크립트만 점검합니다.")
+    if MOVED:
+        print(f"옮긴 자리에서 다시 점검합니다: {ROOT} (가상환경은 옮겨 온 것을 그대로 씀)")
     version = re.search(r'^VERSION = "([^"]+)"', (ROOT / "app" / "config.py").read_text(encoding="utf-8"), re.M).group(1)
     env = dict(os.environ)
     for k in ("PYTHONIOENCODING", "PYTHONUTF8", "PM_MOCK_PORT"):
@@ -175,7 +181,7 @@ def main() -> int:
     # (모아 두지 않고 바로 적게 해서, 서버를 강제로 끝내도 찍힌 줄이 남게 한다)
     benv = {**env, "PYTHONIOENCODING": "cp949", "PYTHONUNBUFFERED": "1"}
     info = [f"도구 버전 {version}", platform.platform(), f"Python {platform.python_version()}",
-            f"시스템 글자표 {locale.getpreferredencoding(False)}"]
+            f"시스템 글자표 {locale.getpreferredencoding(False)}", f"폴더 {ROOT}" + (" (옮긴 뒤)" if MOVED else "")]
     print(" · ".join(info), flush=True)
 
     stub = ROOT / "ci_stub"
@@ -201,19 +207,26 @@ def main() -> int:
         bare = [b.name for b in bats if b.read_bytes().replace(b"\r\n", b"").count(b"\n")]
         note("받은 파일: 배치 파일 줄바꿈이 모두 CRLF", len(bats) >= 4 and not bare,
              "LF 섞임: " + ", ".join(bare) if bare else ", ".join(b.name for b in bats))
+        if MOVED:
+            old = os.environ.get("PM_OLD_ROOT", "")
+            note("옮긴 뒤: 예전 자리가 비어 있음", bool(old) and not Path(old).exists(), old or "PM_OLD_ROOT 없음")
+            if WIN:
+                note("옮긴 뒤: 다른 드라이브에서 실행 중", bool(old) and Path(old).drive.lower() != ROOT.drive.lower(),
+                     f"{Path(old).drive or '?'} → {ROOT.drive or '?'}")
 
         # ── 1. setup.bat ────────────────────────────────────────────
         vpy = VPY
         if WIN:
-            shutil.rmtree(ROOT / ".venv", ignore_errors=True)
-            rc, out = run(["cmd", "/c", "setup.bat"], env, 1800, "setup.bat")
+            if not MOVED:
+                shutil.rmtree(ROOT / ".venv", ignore_errors=True)
+            rc, out = run(["cmd", "/c", "setup.bat"], env, 1800, "setup.bat" + (" (옮긴 뒤 다시 실행)" if MOVED else ""))
             note("setup.bat: 끝까지 실행 (종료 코드 0)", rc == 0, f"종료 코드 {rc}")
-            note("setup.bat: 가상환경(.venv) 생성", vpy.exists())
+            note("setup.bat: 가상환경(.venv) " + ("그대로 씀" if MOVED else "생성"), vpy.exists())
             steps = [k for k in ("[1/5]", "[2/5]", "[3/5]", "[4/5]", "[5/5]", "[5/5-2]", "[5/5-3]", "설치 완료") if k in out]
             note("setup.bat: 다섯 단계와 '설치 완료' 가 한글로 찍힘", len(steps) == 8 and "가상환경" in out, " ".join(steps))
             note("setup.bat: 모델 셋을 '이미 있음' 으로 인식", out.count("이미 있음") >= 3, f"{out.count('이미 있음')}회")
             # 2026-09-28 이전 판에서 올라오는 PC: 가상환경은 있고 PDF 라이브러리 둘만 없다 → setup.bat 재실행으로 채워지는지
-            if vpy.exists():
+            if vpy.exists() and not MOVED:
                 run([str(vpy), "-m", "pip", "uninstall", "-y", "pdfminer.six", "pypdf"], env, 300, "업데이트 흉내: PDF 라이브러리 지우기")
                 rc, out = run([str(vpy), "-c", "import pdfminer, pypdf"], env, 60, "지워졌는지")
                 gone = rc != 0
@@ -232,6 +245,10 @@ def main() -> int:
                       {**env, "PYTHONIOENCODING": "utf-8"}, 120, "설치된 라이브러리")
         libs = out.strip().splitlines()[-1] if rc == 0 and out.strip() else ""
         note("라이브러리: PDF 용 둘(pdfminer.six · pypdf)까지 설치됨", "pdfminer.six 20250506" in libs and "pypdf 6.1.3" in libs, libs)
+        rc, out = run([str(vpy), "-c", "import sys; print(sys.prefix)"], {**env, "PYTHONIOENCODING": "utf-8"}, 60, "가상환경 위치")
+        prefix = out.strip().splitlines()[-1] if rc == 0 and out.strip() else ""
+        note("가상환경이 이 폴더를 가리킴" + (" (옮긴 뒤에도)" if MOVED else ""),
+             rc == 0 and Path(prefix).resolve() == (ROOT / ".venv").resolve(), prefix)
 
         # ── 2. 점검 스크립트 (출력 글자표를 한국어 Windows 처럼) ──────────
         # 임시 폴더: 사용자 이름이 한글인 PC 의 C:\Users\홍길동\AppData\Local\Temp 처럼 한글·공백이 든 경로
@@ -295,6 +312,8 @@ def main() -> int:
             note("mark.bat: 파일 없이 실행하면 사용법을 알리고 끝남", rc == 1 and "끌어다" in out, f"종료 코드 {rc}")
 
         # ── 4. run.bat (웹 서버) ─────────────────────────────────────
+        for old_result in out_dir.glob("*특허마킹*"):    # 앞선 실행의 결과가 남아 있으면 지우고 새로 확인
+            old_result.unlink()
         log = open(TMP / "run_bat.log", "wb")
         srv = subprocess.Popen(["cmd", "/c", "run.bat"] if WIN else [str(vpy), "-m", "app.main"], cwd=str(ROOT),
                                env=benv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
