@@ -60,6 +60,10 @@ with (_TMP / "dataset.jsonl").open("w", encoding="utf-8") as fh:
         fh.write(json.dumps({"date": "2026-09-19", "file": "검토완료.pptx",
                              "mode": "archive", **r}, ensure_ascii=False) + "\n")
 
+# 이 점검의 기대값은 2026-09-30b 까지의 판정 기준(빠짐없이)으로 만든 것 — 현재 설정도 그 기준으로 채점한다.
+# ('확실한 것만' 으로 채점하면 수단이 안 적힌 B 후보를 버리므로 정답 3 중 1 만 맞힌다 — tests/test_mode.py 가 따로 본다)
+config.MODE = "broad"
+
 es = evaluate.build_eval_set()
 assert len(es["paras"]) == 3, es
 assert es["golds"] == 3, es                      # pA 2개 + pC 1개 (없는 인용구 제외)

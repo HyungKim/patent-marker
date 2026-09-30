@@ -135,7 +135,8 @@ check("PPTX 결과 이름은 그대로 .pptx", local.output_path_for("보고서.
 # ── 3. 파이프라인: 형광펜 주석 + 1쪽 범례 ───────────────────────────
 stages: list[str] = []
 dst = config.OUTPUT_DIR / "변환보고서_특허마킹.pdf"
-resolved, stats = pipeline.run(src, dst, config.RunOptions(), progress=lambda p: stages.append(p.stage))
+# 이 파일은 PDF 경로를 2026-09-30b 까지의 판정 기준(빠짐없이)으로 검사한다. '확실한 것만' 은 tests/test_mode.py.
+resolved, stats = pipeline.run(src, dst, config.RunOptions(mode="broad"), progress=lambda p: stages.append(p.stage))
 check("결과 PDF 저장", dst.exists() and dst.stat().st_size > 10_000, f"{dst.stat().st_size if dst.exists() else 0} bytes")
 check("후보·집계 (문구 삽입은 PDF 에 없음 → tags 0)",
       stats["total"] == len(resolved) > 0 and stats["legend"] == 1 and stats["tags"] == 0,
@@ -167,7 +168,7 @@ check("범례 메모에 안내 제목·등급 설명", config.LEGEND_TITLE in st
 # 같은 문서의 PPTX 결과와 비교 — PDF 로 넣어도 같은 후보가 나와야 한다 (쪽 = 슬라이드, 문단 글자열도 같음).
 # PPTX 쪽은 발표자 노트(PDF 변환본에는 없는 부분)의 후보를 빼고, 문단·등급·공개 단위로 비교한다
 # (가운뎃점 · 이 PDF 표준 글꼴에 없어 • 로 바뀌면 규칙 사전 인용구의 끝자리가 한 문단에서 달라질 수 있어 인용구 자체는 참고로만 센다).
-pres, pstats = pipeline.run(PPTX, config.OUTPUT_DIR / "원본_특허마킹.pptx", config.RunOptions())
+pres, pstats = pipeline.run(PPTX, config.OUTPUT_DIR / "원본_특허마킹.pptx", config.RunOptions(mode="broad"))
 pkind = {s.seg_id: s for s in pdeck.segments}
 pres_body = [f for f in pres if pkind[f.seg_id].kind in ("title", "body", "table")]
 pkey = lambda f, segs: (f.slide_no, norm(segs[f.seg_id].text), f.grade, bool(f.disclosure_risk))   # noqa: E731
@@ -315,7 +316,8 @@ def post(path: str, body: bytes, ctype: str):
         return e.code, e.headers, e.read()
 
 
-body, ctype = multipart({"model": config.MODEL, "think": "false", "scan_all": "false", "tag_marks": "false"},
+# 같은 문서의 분석 기록(archive)을 아래 검토본 대조가 쓰므로, 업로드 분석도 위와 같은 판정 기준(빠짐없이)으로 돌린다
+body, ctype = multipart({"model": config.MODEL, "mode": "broad", "think": "false", "scan_all": "false", "tag_marks": "false"},
                         [("file", "웹업로드.pdf", PDF.read_bytes())])
 st, _, raw = post("/api/jobs", body, ctype)
 job = json.loads(raw).get("job_id") if st == 200 else None

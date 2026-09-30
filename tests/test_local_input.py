@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import mock_llm  # noqa: E402  (가짜 Ollama)
 
-from app import config  # noqa: E402
+from app import analyze, config, extract  # noqa: E402
 
 MOCK_HOST = mock_llm.start()
 config.OLLAMA_HOST = MOCK_HOST
@@ -108,13 +108,14 @@ with tempfile.TemporaryDirectory() as td:
     # ── 3. 파이프라인 (가짜 모델) + 중단 신호 ────────────────────
     stages: list[str] = []
     out = config.OUTPUT_DIR / "파이프라인.pptx"
-    resolved, stats = pipeline.run(SAMPLE, out, config.RunOptions(),
+    # 이 절은 2026-09-30b 까지의 흐름(빠짐없이)을 그대로 검사한다. '확실한 것만' 은 tests/test_mode.py.
+    resolved, stats = pipeline.run(SAMPLE, out, config.RunOptions(mode="broad"),
                                    progress=lambda p: stages.append(p.stage))
     check("pipeline.run: 결과 파일 저장", out.exists() and out.stat().st_size > 1000)
     check("pipeline.run: 후보와 집계", stats["total"] == len(resolved) > 0 and stats["legend"] == 1,
           f"후보 {stats['total']} · 범례 {stats['legend']}")
     check("pipeline.run: 단계 보고 (읽기→…→완료)",
-          stages[0] == "문서 읽는 중" and stages[-1] == "완료" and any("슬라이드 1 " in s for s in stages))
+          stages[0] == "문서 읽는 중" and stages[-1] == "완료" and any(s.startswith("슬라이드 1") for s in stages))
     # ── 3-1. 속도 성적표: 슬라이드 줄 · 집계 · 실행 기록 파일 ────
     check("슬라이드 성적표 줄 (토큰·토큰/초)",
           any("분석 완료 ·" in st and "토큰/초" in st for st in stages),
@@ -122,7 +123,14 @@ with tempfile.TemporaryDirectory() as td:
     check("집계에 토큰 수·속도·버전", stats["prompt_tokens"] > 0 and stats["output_tokens"] > 0
           and stats["tokens_per_sec"] > 0 and stats["version"] == config.VERSION and "토큰/초" in stats["speed_text"],
           stats.get("speed_text", ""))
-    check("모델 호출 수 = 문단이 있는 슬라이드 수", stats["calls"] == 5, f"calls={stats['calls']}")
+    # 2026-10-01 부터 슬라이드 몇 장을 한 호출로 묶는다 (config.BATCH_CHARS) → 호출 수 = 묶음 수
+    _deck = extract.extract(str(SAMPLE))
+    _by: dict = {}
+    for _s in analyze.prescreen(_deck, config.RunOptions(mode="broad"))[1]:
+        _by.setdefault(_s.slide_no, []).append(_s)
+    _n_batches = len(pipeline.batches_of(_by, _deck.slide_count, config.BATCH_CHARS))
+    check("모델 호출 수 = 슬라이드 묶음 수 (묶음 크기 config.BATCH_CHARS)", stats["calls"] == _n_batches and 1 <= _n_batches <= 5,
+          f"calls={stats['calls']} · 묶음 {_n_batches}")
     log = config.REVIEW_DIR / "run_log.tsv"
     lines = log.read_text(encoding="utf-8-sig").splitlines() if log.exists() else []
     check("run_log.tsv 에 머리글 + 한 줄", len(lines) == 2 and lines[0].startswith("일시\t버전") and SAMPLE.name in lines[1],

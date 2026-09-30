@@ -326,11 +326,13 @@ def main() -> int:
                  and bool(health.get("model_ready")), f"version {health.get('version')} · model_ready {health.get('model_ready')}")
             page = get(base + "/")[2].decode("utf-8")
             token = page.split('const TOKEN = "', 1)[1].split('"', 1)[0] if 'const TOKEN = "' in page else ""
-            note("run.bat: 첫 화면에 버전·새 체크박스", version in page and 'id="optStrip"' in page and len(token) > 10)
+            note("run.bat: 첫 화면에 버전·판정 기준 선택·체크박스", version in page and 'id="optStrip"' in page
+                 and 'id="optMode"' in page and len(token) > 10)
             st, _, raw = get(base + "/api/local/jobs", 60, {"Content-Type": "application/json", "X-PM-Token": token},
                              json.dumps({"path": str(pptx), "model": "qwen3:8b"}).encode("utf-8"))
             snap = wait_job(base, json.loads(raw)["job_id"])
-            note("run.bat: 경로로 넣은 PPTX 분석 완료", snap.get("status") == "done", str(snap.get("error") or snap.get("stage")))
+            note("run.bat: 경로로 넣은 PPTX 분석 완료 (판정 기준 기본값)", snap.get("status") == "done",
+                 f"{snap.get('error') or snap.get('stage')} · {(snap.get('result') or snap.get('stats') or {}).get('mode_text', '')}")
             outs = sorted(p.name for p in out_dir.glob("*특허마킹*"))
             note("run.bat: output 폴더에 결과 저장", any(n.endswith(".pptx") for n in outs), ", ".join(outs))
             st, _, raw = get(base + "/api/local/jobs", 60, {"Content-Type": "application/json", "X-PM-Token": token},
