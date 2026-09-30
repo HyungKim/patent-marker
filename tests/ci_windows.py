@@ -53,7 +53,7 @@ MOCK_PORT = 11434 if WIN else 11601          # 배치 파일은 11434 만 본다
 WEB_PORT = 8765 if WIN else 8791
 TMP = ROOT / "ci_tmp"
 TESTS = ["test_filter", "smoke", "test_review", "test_eval", "test_memory", "test_local_input",
-         "test_model_call", "test_pdf", "test_prehl", "test_cp949"]
+         "test_model_call", "test_pdf", "test_prehl", "test_cp949", "test_mode"]
 RESULTS: list[tuple[str, bool | None, str]] = []     # 결과가 None 이면 '참고' (통과·실패로 세지 않음)
 
 # `where ollama` 와 `ollama list` 에 답하는 가짜 명령. 서버 자리는 아래에서 파이썬으로 따로 띄운다.
