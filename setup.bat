@@ -102,7 +102,8 @@ echo.
 echo [4/5] Ollama 서버 기동
 curl -sf %OLLAMA_URL%/api/tags >nul 2>&1 && goto ollama_ready
 echo    서버를 시작합니다 (최소화된 "Ollama" 창이 하나 열립니다)...
-start "Ollama" /MIN "%OLLAMA%" serve
+REM /D: Ollama 를 사용자 홈 폴더에서 띄운다. 이 폴더에서 띄우면 Ollama 가 도는 동안 이 폴더를 옮기거나 지울 수 없다
+start "Ollama" /D "%USERPROFILE%" /MIN "%OLLAMA%" serve
 set /a tries=0
 :wait_ollama
 timeout /t 1 /nobreak >nul

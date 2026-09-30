@@ -29,7 +29,8 @@ if not defined OLLAMA (
   goto ollama_ready
 )
 echo Ollama 를 시작합니다...
-start "Ollama" /MIN "%OLLAMA%" serve
+REM /D: Ollama 를 사용자 홈 폴더에서 띄운다. 이 폴더에서 띄우면 Ollama 가 도는 동안 이 폴더를 옮기거나 지울 수 없다
+start "Ollama" /D "%USERPROFILE%" /MIN "%OLLAMA%" serve
 set /a tries=0
 :wait_ollama
 timeout /t 1 /nobreak >nul
@@ -42,7 +43,7 @@ echo.
 echo   특허 마킹 도구  -  http://127.0.0.1:%PORT%
 echo   (이 창을 닫으면 프로그램이 종료됩니다)
 echo.
-REM 3초 뒤 브라우저를 연다 (서버가 뜰 시간을 줌)
-start "" cmd /c "timeout /t 3 /nobreak >nul & start http://127.0.0.1:%PORT%"
+REM 3초 뒤 브라우저를 연다 (서버가 뜰 시간을 줌). /D: 브라우저도 이 폴더가 아니라 홈 폴더에서 띄운다 (폴더 옮길 때 잠기지 않게)
+start "" /D "%USERPROFILE%" cmd /c "timeout /t 3 /nobreak >nul & start http://127.0.0.1:%PORT%"
 ".venv\Scripts\python.exe" -m app.main
 pause

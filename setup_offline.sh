@@ -65,10 +65,11 @@ ok "Ollama: $OLLAMA"
 
 # ── 4. 모델 파일 복사 ─────────────────────────────────────────
 say "4/5  모델 파일 복사 (약 9GB)"
+MODELS_DIR="${OLLAMA_MODELS:-$HOME/.ollama/models}"     # 모델 저장 위치를 바꿔 둔 PC 면 그곳에
 if [ -d "$B/models/manifests" ]; then
-  mkdir -p "$HOME/.ollama/models"
-  rsync -a "$B/models/" "$HOME/.ollama/models/" || cp -R "$B/models/." "$HOME/.ollama/models/"
-  ok "복사 완료 → ~/.ollama/models"
+  mkdir -p "$MODELS_DIR"
+  rsync -a "$B/models/" "$MODELS_DIR/" || cp -R "$B/models/." "$MODELS_DIR/"
+  ok "복사 완료 → $MODELS_DIR"
 else
   warn "offline_bundle/models 가 없습니다. 모델을 따로 준비해야 합니다."
 fi

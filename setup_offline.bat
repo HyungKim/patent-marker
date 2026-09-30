@@ -89,10 +89,12 @@ echo    사용: %OLLAMA%
 
 echo.
 echo [4/5] 모델 파일 복사 (약 9GB, 몇 분 걸립니다)
+REM 모델 저장 위치를 OLLAMA_MODELS 로 바꿔 둔 PC(예: D: 드라이브)면 그곳에 복사한다
+if defined OLLAMA_MODELS (set "MODELS_DIR=%OLLAMA_MODELS%") else (set "MODELS_DIR=%USERPROFILE%\.ollama\models")
 if exist "%B%\models\manifests" (
-  if not exist "%USERPROFILE%\.ollama\models" mkdir "%USERPROFILE%\.ollama\models"
-  xcopy "%B%\models" "%USERPROFILE%\.ollama\models\" /E /I /Y /Q >nul
-  echo    복사 완료 -^> %USERPROFILE%\.ollama\models
+  if not exist "%MODELS_DIR%" mkdir "%MODELS_DIR%"
+  xcopy "%B%\models" "%MODELS_DIR%\" /E /I /Y /Q >nul
+  echo    복사 완료 -^> %MODELS_DIR%
 ) else (
   echo    [경고] offline_bundle\models 가 없습니다. 모델을 따로 준비해야 합니다.
 )
@@ -100,7 +102,8 @@ if exist "%B%\models\manifests" (
 echo.
 echo [5/5] Ollama 서버 기동 및 모델 확인
 curl -sf %OLLAMA_URL%/api/tags >nul 2>&1 && goto ollama_ready
-start "Ollama" /MIN "%OLLAMA%" serve
+REM /D: Ollama 를 사용자 홈 폴더에서 띄운다. 이 폴더에서 띄우면 Ollama 가 도는 동안 이 폴더를 옮기거나 지울 수 없다
+start "Ollama" /D "%USERPROFILE%" /MIN "%OLLAMA%" serve
 set /a tries=0
 :wait_ollama
 timeout /t 1 /nobreak >nul

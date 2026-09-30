@@ -45,7 +45,8 @@ if not defined OLLAMA (
   goto ollama_ready
 )
 echo Ollama 를 시작합니다...
-start "Ollama" /MIN "%OLLAMA%" serve
+REM /D: Ollama 를 사용자 홈 폴더에서 띄운다. 이 폴더에서 띄우면 Ollama 가 도는 동안 이 폴더를 옮기거나 지울 수 없다
+start "Ollama" /D "%USERPROFILE%" /MIN "%OLLAMA%" serve
 set /a tries=0
 :wait_ollama
 timeout /t 1 /nobreak >nul

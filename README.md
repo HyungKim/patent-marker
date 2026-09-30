@@ -15,6 +15,7 @@ AI(Qwen3)를 쓰지만 **내 컴퓨터 안에서만** 돌고, 문서는 외부�
 ## 빠른 시작 (Windows)
 
 0. GitHub 에서 받은 경우 **(처음 설치할 때만)**: 초록 **Code → Download ZIP** → `C:\` 에 풀고 폴더명을 `patent_marker` 로 변경.
+   (`D:\` 등 다른 드라이브도 됩니다. 이미 설치한 뒤 옮기는 방법과 C: 비우기는 가이드 [7-3])
    (저장소에는 15GB `offline_bundle` 이 없으므로 아래 `setup.bat` 온라인 설치를 사용합니다)
 1. `setup.bat` 더블클릭 ─ 처음 한 번. Python·Ollama·모델(5GB, + 빠름 모델 2.5GB)을 자동 설치합니다. (인터넷 필요)
    - 인터넷이 없는 PC 라면 `setup_offline.bat` (미리 만든 `offline_bundle/` 필요)
