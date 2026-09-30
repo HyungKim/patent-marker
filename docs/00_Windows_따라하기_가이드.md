@@ -272,6 +272,9 @@
 
   2. https://github.com/HyungKim/patent-marker 를 열고
      초록 Code 버튼 → Download ZIP.   patent-marker-main.zip 이 받아집니다.
+     (main 은 항상 검증된 안정판입니다. 작업 중인 것은 dev 에만 있어 여기에는 섞이지 않습니다)
+     ※ 예전 특정 판으로 되돌리고 싶으면: 같은 페이지 오른쪽 "Releases" → 원하는 판(예: v2026-09-30b) →
+        "Source code (zip)". 나머지 순서는 아래와 같습니다 (풀린 폴더 이름만 patent-marker-2026-09-30b 처럼 다릅니다).
 
   3. 받은 zip 을 우클릭 → "압축 풀기..." → 바탕화면 등 아무 빈 폴더에 풉니다.
      C:\ 에 풀지 마세요.  풀면 patent-marker-main 이라는 폴더가 생깁니다.
