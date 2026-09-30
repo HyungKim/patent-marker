@@ -82,6 +82,9 @@ RULES: list[Rule] = [
     _r("NUM_RATIO", "수치·범위한정", 4,
        r"\d+\s*(?::|대)\s*\d+\s*(?:비율|로|의|배합|혼합)?",
        "비율 한정 — 조성·배합·증강 비율 등"),
+    _r("NUM_FRACTION", "수치·범위한정", 3,
+       r"(?<![\d.])\d+\s*/\s*\d+(?![\d.])",
+       "분수 표기(1/33 등) — 축소·배분 비율이 특정됨"),
     _r("NUM_SHIFT", "효과만기재", 5,
        r"[\w\.\±%㎛°]+\s*(?:→|->|⇒|에서)\s*[\w\.\±%㎛°]+\s*(?:로|으로)?\s*"
        rf"(?:{EFFECT_VERB}|개선|변경)?",
@@ -177,6 +180,37 @@ RULES: list[Rule] = [
        r"(?:출시|런칭|양산\s*(?:개시|시작|착수)|SOP|납품\s*(?:완료|개시)|판매\s*개시|상용화)",
        "판매·양산 개시 = 공연실시. 출원 가능 기한이 지났는지 확인 필요"),
 ]
+
+# ═════════════════════════════════════════════════════════════════
+# '확실한 것만'(strict) 에서 쓰는 규칙 — 수단이 문면에 드러나는 명시형 + 진짜 공개 신호 + 사용자 추가 규칙
+# ═════════════════════════════════════════════════════════════════
+# IMP_* (효과만 있음·독자 개발 주장·최적화·문제 해결·비교우위·기술 명사) 는 "존재가 시사된다" 는 뜻일 뿐이라
+# strict 에서는 문단을 모델에 보내는 기준으로도, 안전망으로도 쓰지 않는다.
+STRICT_RULE_IDS = frozenset({
+    "NUM_RANGE", "NUM_TOL", "NUM_UNIT", "NUM_RATIO", "NUM_FRACTION", "NUM_SHIFT",
+    "STRUCT_STAGE", "STRUCT_WORD", "CTRL_ALGO", "PROC_METHOD", "IMP_AUTO",
+    "RISK_SHOW", "RISK_PAPER", "RISK_PR", "RISK_SHARE", "RISK_LAUNCH",
+})
+
+
+def is_strict_rule(rid: str) -> bool:
+    """이 규칙이 '확실한 것만' 에서도 쓰이는가 (사용자가 [사전에 추가] 한 USER_ 규칙은 언제나 포함)."""
+    return rid in STRICT_RULE_IDS or rid.startswith("USER_")
+
+
+def strict_only(hits: list) -> list:
+    return [h for h in hits if is_strict_rule(h.rid)]
+
+
+# 공개 신호 바로 뒤에 붙어 "공개하지 않았다" 는 뜻으로 뒤집는 표현. "논문·특허 등 공개 실적 없음" 이 대표적.
+NEGATION_AFTER = re.compile(r"(?:없음|없다|없었|없이|미발표|미공개|미제출|않(?:음|았|는|고)|안\s*함|하지\s*않|제외|금지)")
+
+
+def negated(text: str, span: tuple[int, int], reach: int = 14) -> bool:
+    """규칙이 걸린 자리(span) 뒤 reach 글자 안에 부정 표현이 있는가 — '공개' 신호를 뒤집는 경우."""
+    tail = text[span[1]:span[1] + reach]
+    return bool(NEGATION_AFTER.search(tail))
+
 
 # ═════════════════════════════════════════════════════════════════
 # 경영 정보(오탐) 걸러내기

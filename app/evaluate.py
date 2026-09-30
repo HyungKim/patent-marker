@@ -123,14 +123,19 @@ def _variant_hits(text: str, base_only: bool) -> list[lexicon.Hit]:
 
 
 def _run_variant(paras: list[dict], model: str, system: str,
-                 base_only: bool, progress=None) -> dict[str, list[dict]]:
-    """문제지 전체를 한 설정으로 분석해 문단별 예측 목록을 돌려준다."""
+                 base_only: bool, progress=None, mode: str = "broad") -> dict[str, list[dict]]:
+    """문제지 전체를 한 설정으로 분석해 문단별 예측 목록을 돌려준다.
+
+    mode : 판정 기준. 최초 설정은 언제나 "broad"(빠짐없이 지시서·안전망), 현재 설정은 config.MODE.
+    """
     segs = [Segment(seg_id=i, slide_no=1, kind="body", addr=f"eval/{i}", text=p["text"])
             for i, p in enumerate(paras, 1)]
     hits_by_seg = {s.seg_id: _variant_hits(s.text, base_only) for s in segs}
+    if mode == "strict":
+        hits_by_seg = {k: lexicon.strict_only(v) for k, v in hits_by_seg.items()}
 
     budget = max(config.NUM_CTX - len(system) - 1500, 1200)
-    opts = config.RunOptions(model=model, think=False)
+    opts = config.RunOptions(model=model, think=False, mode=mode)
     learn = (not base_only) and config.LEARN
     use_embed = bool(learn and config.LEARN_EMBED and memory.embed_available())
     findings: list[analyze.Finding] = []
@@ -146,7 +151,7 @@ def _run_variant(paras: list[dict], model: str, system: str,
             memory.set_context(True, exclude_texts={s.text for s in chunk})
             block, _info = memory.examples_for([s.text for s in chunk], use_embed=use_embed)
             if block:
-                sys_used = analyze.SYSTEM + "\n\n" + block
+                sys_used = analyze.system_for(mode) + "\n\n" + block
         try:
             findings += analyze._analyze_batch("", 1, 1, chunk, hints, opts,
                                                system_override=sys_used, cancel=STATE["cancel"])
@@ -158,7 +163,7 @@ def _run_variant(paras: list[dict], model: str, system: str,
     # 실제 파이프라인과 같은 병합·안전망·오탐 필터를 통과시킨다
     deck = SimpleNamespace(segments=segs)
     memory.set_context(learn)
-    resolved, _marks = merge.resolve(deck, findings, hits_by_seg)
+    resolved, _marks = merge.resolve(deck, findings, hits_by_seg, mode=mode)
     if learn:
         # ①② 문단 기억·제외 사전 — 문단마다 자기 자신에서 나온 기억은 뺀다 (leave-one-out)
         def _mk(seg, quote, span, grade, risk, category, reason):
@@ -295,7 +300,7 @@ def _config_snapshot() -> dict:
     # 프롬프트를 바꾸는 것은 injected 쪽이다. 풀은 계속 커지지만 판정에는 영향이 없으므로
     # 둘을 나눠 기록해야 "점수가 왜 올랐는지" 를 나중에 설명할 수 있다.
     ms = memory.stats()
-    return {"model": config.MODEL, "rules": rules,
+    return {"model": config.MODEL, "mode": config.MODE, "rules": rules,
             "examples": st["examples"], "injected": st["injected"],
             "dataset": st["dataset"],
             # 검토 학습 — 켜짐 여부와 기억 크기 (회차 간 비교 설명용)
@@ -327,6 +332,9 @@ def _changes(prev: dict | None, snap: dict) -> dict | None:
         "dataset_delta": snap["dataset"] - (p.get("dataset") or 0),
         "model_change": (f'{p.get("model")} → {snap["model"]}'
                          if p.get("model") and p.get("model") != snap["model"] else None),
+        # 판정 기준이 바뀌면 지시서·안전망이 통째로 바뀐 것 — 이 항목이 없던 예전 회차는 '빠짐없이' 였다
+        "mode_change": (f'{p.get("mode") or "broad"} → {snap.get("mode")}'
+                        if (p.get("mode") or "broad") != snap.get("mode") else None),
         # 검토 학습의 기억 크기 변화 (없던 회차는 0 으로 본다)
         "memory_delta": (snap.get("memory_paras") or 0) - (p.get("memory_paras") or 0),
         "auto_rules_delta": (snap.get("auto_rules") or 0) - (p.get("auto_rules") or 0),
@@ -402,8 +410,8 @@ def run_sync(note: str = "") -> dict:
     if not analyze.model_available(base_model, h.get("models", [])):
         base_model, base_fallback = cur_model, True   # 8b 가 없으면 현재 모델로 대신
 
-    base_system = analyze.SYSTEM                       # 예시 주입 없는 원래 지시서
-    cur_system = analyze._system_prompt()              # 확정 사례가 붙은 지시서
+    base_system = analyze.SYSTEM_BROAD                 # 예시 주입 없는 원래(빠짐없이) 지시서
+    cur_system = analyze._system_prompt(config.MODE)   # 현재 판정 기준의 지시서 + 확정 사례
     # 스냅샷은 '이번 회차가 실제로 쓴 설정' 이어야 한다. 채점이 끝난 뒤에 찍으면
     # 측정 도중에 [반영 저장] 이 들어온 경우 쓰지도 않은 설정이 기록된다.
     snap = _config_snapshot()
@@ -418,7 +426,7 @@ def run_sync(note: str = "") -> dict:
                               progress=tick)
     STATE["stage"] = f"현재 설정으로 채점 중 ({cur_model})"
     cur_preds = _run_variant(paras, cur_model, cur_system, base_only=False,
-                             progress=tick)
+                             progress=tick, mode=config.MODE)
 
     STATE["stage"] = "채점 집계 중"
     base_sc = _score(paras, base_preds)

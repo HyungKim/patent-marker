@@ -144,7 +144,42 @@ JSON 한 개만 출력한다: {"findings": [{"i": 문단 번호, "q": 인용구,
 - 한 문단에 서로 **다른 분류**의 근거가 있으면 건을 나누고, **같은 분류**의 근거가 여럿이면 가장 대표적인 것 한 건만 반환한다."""
 
 
-def _system_prompt() -> str:
+# 2026-09-30b 까지의 지시서. "빠짐없이"(broad) 판정 기준이 쓴다. 성능 측정의 '최초 설정' 도 이것이다.
+SYSTEM_BROAD = SYSTEM
+
+# "확실한 것만"(strict) 판정 기준의 지시서 (2026-10-01, docs/05 23회차).
+# 위 지시서의 절반 길이(토큰 573 vs 1,352)라 읽는 시간이 줄고, 반환할 것을 둘로 좁혀 답도 짧다.
+# 출력 예시를 공백 없는 JSON 으로 보여 준다 — 모델이 예시 모양을 따라 쓰므로 한 건당 토큰이 준다.
+SYSTEM_STRICT = """당신은 한국 기업의 내부 기술 보고자료에서 특허 출원 후보 구간을 고르는 지식재산 분석 보조자다.
+변리사에게 넘길 후보를 고르되 **확실한 것만** 고른다. 애매하면 반환하지 않는다. 적게 고르는 것이 많이 고르는 것보다 낫다.
+
+## 반환할 것 (둘뿐)
+- A : 구체적 기술 수단이 문장에 실제로 적혀 있다 — 구성 요소와 연결 관계, 공정 순서와 조건, 제어 로직, 수치 범위·공차, 재료·조성.
+      "무엇을 어떻게" 가 적혀 있어 그대로 청구항 초안이 되는 문장.
+- 공개 관련 문장 : 전시·시연, 논문·학회 발표, 보도자료, 고객사 제안서 제출, 출시·양산 개시처럼 기술이 외부에 드러났거나
+      드러날 예정임이 **명시된** 문장 → d 를 true 로 반환한다 (g 는 A 또는 B). "공개 실적 없음" 처럼 부정한 문장은 아니다.
+
+## 반환하지 않을 것
+- 효과·수치·목표만 있고 수단이 없는 문장 ("원가 40% 절감", "불량률 개선", "편차 축소")
+- "자체 개발", "최적화", "기존 대비 우수", "노하우", "알고리즘 적용" 처럼 수단이 적히지 않은 주장·명사
+- 매출·이익·점유율·일정·인원·조직·예산, 특허 행정 상태("출원 0건", "IP 검토 예정"), 타사 특허 언급
+- 배경 설명, 시장 동향, 목차·요약, 표의 숫자 조각
+
+## 출력 규칙 (짧게 — 한 글자마다 시간이 든다)
+JSON 한 개만, 공백 없이: {"findings":[{"i":3,"q":"인용구","g":"A","c":"분류","d":false,"r":"사유"}]}
+- 후보가 없으면 {"findings":[]} 만 답한다. 억지로 찾지 않는다.
+- i : 문단 앞의 # 번호 (숫자만).
+- q : 해당 문단 원문에 **그대로 있는 연속 부분 문자열**, 핵심 어구 25자 이내.
+- c : 분류 이름 하나.  r : 12자 이내 핵심어.
+- 한 문단에는 가장 확실한 한 건만."""
+
+
+def system_for(mode: str) -> str:
+    """판정 기준에 맞는 지시서. strict = 확실한 것만, 그 밖 = 빠짐없이."""
+    return SYSTEM_STRICT if mode == "strict" else SYSTEM_BROAD
+
+
+def _system_prompt(mode: str = "broad") -> str:
     """업무 지시서 + (있다면) 검토 반영 탭에서 쌓인 '사내 확정 사례' 블록.
 
     사람이 검토완료본으로 교정한 오탐·누락 사례가 review_data/examples.json 에
@@ -155,7 +190,7 @@ def _system_prompt() -> str:
         block = review.examples_block()
     except Exception:
         block = ""
-    return SYSTEM + ("\n\n" + block if block else "")
+    return system_for(mode) + ("\n\n" + block if block else "")
 
 
 @dataclass
@@ -385,12 +420,30 @@ def model_available(model: str, models: list[str]) -> bool:
 # ═════════════════════════════════════════════════════════════════
 # 프롬프트 만들기 / 답 해석하기
 # ═════════════════════════════════════════════════════════════════
-def _build_user_prompt(deck_title: str, slide_no: int, total: int,
+def slide_label(slide_no) -> str:
+    """슬라이드 번호(하나 또는 여럿)를 사람이 읽는 표기로: 3 → '3', [3,4,5] → '3~5', [3,5] → '3, 5'."""
+    if isinstance(slide_no, int):
+        return str(slide_no)
+    nums = sorted(set(int(n) for n in slide_no))
+    if not nums:
+        return "?"
+    if len(nums) == 1:
+        return str(nums[0])
+    if nums == list(range(nums[0], nums[-1] + 1)):
+        return f"{nums[0]}~{nums[-1]}"
+    return ", ".join(str(n) for n in nums)
+
+
+def _build_user_prompt(deck_title: str, slide_no, total: int,
                        segs: list[Segment], hints: dict[int, list[str]]) -> str:
-    """모델에게 보낼 본문. 문단 목록 + 규칙 사전이 미리 찾은 힌트."""
+    """모델에게 보낼 본문. 문단 목록 + 규칙 사전이 미리 찾은 힌트.
+
+    slide_no 는 슬라이드 번호 하나(int) 또는 여럿(list) — 여러 장을 한 호출에 묶을 때(config.BATCH_CHARS)는
+    문단 줄마다 '슬라이드 n' 을 적어 어느 장의 문단인지 알린다.
+    """
     lines = [
         f"문서: {deck_title or '(제목 없음)'}",
-        f"슬라이드 {slide_no} / 전체 {total}",
+        f"슬라이드 {slide_label(slide_no)} / 전체 {total}",
         "",
         "## 문단 목록",
     ]
@@ -398,8 +451,12 @@ def _build_user_prompt(deck_title: str, slide_no: int, total: int,
         "title": "제목", "body": "본문", "table": "표",
         "chart": "차트", "notes": "발표자노트",
     }
+    # 여러 장을 묶을 때는 문단 줄마다 어느 장인지 적는다. "## 슬라이드 3" 같은 머리글을 따로 두면 모델이
+    # 그 숫자를 문단 번호(i)로 적어 버린다 (2026-10-01 측정: 답의 i 가 전부 슬라이드 번호가 되어 버려짐).
+    multi = not isinstance(slide_no, int) and len(set(s.slide_no for s in segs)) > 1
     for s in segs:
-        lines.append(f"#{s.seg_id} [{kind_ko.get(s.kind, s.kind)}] {s.text}")
+        where = f"{kind_ko.get(s.kind, s.kind)} · 슬라이드 {s.slide_no}" if multi else kind_ko.get(s.kind, s.kind)
+        lines.append(f"#{s.seg_id} [{where}] {s.text}")
 
     shown = {s.seg_id for s in segs}
     flagged = {sid: cats for sid, cats in hints.items() if cats and sid in shown}
@@ -470,23 +527,24 @@ def add_stats(total: dict, part: dict) -> None:
         total[k] = total.get(k, 0) + part.get(k, 0)
 
 
-def analyze_slide(deck_title: str, slide_no: int, total: int,
+def analyze_slide(deck_title: str, slide_no, total: int,
                   segs: list[Segment], hints: dict[int, list[str]],
                   opts: config.RunOptions,
                   cancel: threading.Event | None = None,
                   progress: ProgressFn | None = None,
                   stats: dict | None = None,
                   system: str | None = None) -> list[Finding]:
-    """슬라이드 한 장을 분석한다. pipeline.py 가 슬라이드마다 이 함수를 부른다.
+    """슬라이드 한 장(또는 묶은 여러 장)을 분석한다. pipeline.py 가 묶음마다 이 함수를 부른다.
 
+    slide_no : 슬라이드 번호 하나(int) 또는 묶음의 번호 목록(list).
     cancel   : '중단' 신호. 켜지면 진행 중인 모델 호출을 끊고 Aborted 를 올린다.
     progress : 지금까지 받은 답변 글자 수를 알리는 콜백 (화면의 "살아 있음" 표시용).
     stats    : new_stats() 로 만든 집계 상자. 넘기면 토큰 수·소요 초가 더해진다 (속도 기록용).
-    system   : 이 슬라이드용 지시서 (검토 학습의 '유사 사례' 블록이 붙은 것). None 이면 공통 지시서.
+    system   : 이 묶음용 지시서 (검토 학습의 '유사 사례' 블록이 붙은 것). None 이면 판정 기준의 공통 지시서.
     """
     if not segs:
         return []
-    sys_prompt = system or _system_prompt()
+    sys_prompt = system or _system_prompt(opts.mode)
     # 시스템 프롬프트와 답변 몫을 빼고 남는 만큼만 본문에 쓴다 (한글 1자 ≒ 1토큰 가정)
     # SYSTEM 만이 아니라 뒤에 붙는 '사내 확정 사례' 블록까지 포함한 실제 길이를 뺀다.
     # (블록을 빼지 않으면 예산을 실제보다 크게 잡아 모델 답변 몫이 모자랄 수 있다)
@@ -498,7 +556,7 @@ def analyze_slide(deck_title: str, slide_no: int, total: int,
     return out
 
 
-def _analyze_batch(deck_title: str, slide_no: int, total: int,
+def _analyze_batch(deck_title: str, slide_no, total: int,
                    segs: list[Segment], hints: dict[int, list[str]],
                    opts: config.RunOptions,
                    system_override: str | None = None,
@@ -507,13 +565,13 @@ def _analyze_batch(deck_title: str, slide_no: int, total: int,
                    stats: dict | None = None) -> list[Finding]:
     """문단 묶음 하나를 Ollama 에 보내고 Finding 목록으로 바꾼다. ← 모델을 실제로 부르는 곳
 
-    system_override 는 성능 측정(evaluate.py)이 "최초 설정 프롬프트" 로
-    채점할 때만 넘깁니다. 평소 분석에서는 None 이라 _system_prompt() 를 씁니다.
+    system_override 는 성능 측정(evaluate.py)이 "최초 설정 프롬프트" 로 채점할 때와
+    pipeline 이 유사 사례 블록을 붙였을 때 넘깁니다. None 이면 판정 기준(opts.mode)의 지시서를 씁니다.
     """
     payload = {
         "model": opts.model,                      # 예: qwen3:8b
         "messages": [
-            {"role": "system", "content": system_override or _system_prompt()},
+            {"role": "system", "content": system_override or _system_prompt(opts.mode)},
             {"role": "user",
              "content": _build_user_prompt(deck_title, slide_no, total, segs, hints)},
         ],
@@ -576,7 +634,10 @@ def prescreen(deck: Deck, opts: config.RunOptions) -> tuple[dict[int, list[lexic
     """규칙 사전 1차 스캔. (문단별 Hit 목록, 모델에 보낼 문단 목록) 을 돌려준다.
 
     너무 짧은 문단과 '대외비' 같은 상투 문구는 분석에서 제외합니다.
+    '확실한 것만'(strict) 에서는 ① 명시형·공개·사용자 규칙만 신호로 보고(lexicon.STRICT_RULE_IDS)
+    ② config.STRICT_MIN_CHARS 보다 짧은 문단은 모델에 보내지 않습니다 (표 조각·숫자 셀).
     """
+    strict = opts.mode == "strict"
     hits_by_seg: dict[int, list[lexicon.Hit]] = {}
     targets: list[Segment] = []
     for seg in deck.segments:
@@ -585,7 +646,11 @@ def prescreen(deck: Deck, opts: config.RunOptions) -> tuple[dict[int, list[lexic
         if seg.text.strip() in opts.skip_labels:
             continue
         hits = lexicon.scan(seg.text)
+        if strict:
+            hits = lexicon.strict_only(hits)
         hits_by_seg[seg.seg_id] = hits
+        if strict and len(seg.text) < config.STRICT_MIN_CHARS:
+            continue
         if hits or opts.scan_all_paragraphs:
             targets.append(seg)
     return hits_by_seg, targets

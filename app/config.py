@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # 화면 제목 옆(회색 글씨)·검은 창 첫 줄·mark.bat 출력·오류 메시지 끝에 그대로 나옵니다.
 # "지금 도는 것이 새 버전인가" 를 회사 PC 에서 한눈에 확인하는 용도라, 저장소에 올릴 때마다
 # 올린 날짜로 바꿉니다 (같은 날 두 번째면 뒤에 b, c …). 동작에는 아무 영향이 없습니다.
-VERSION = "2026-09-30b"
+VERSION = "2026-10-01"
 
 # ─────────────────────────────────────────────────────────────────
 # 1. 온디바이스 LLM (Ollama) 관련
@@ -54,6 +54,31 @@ MODEL_CHOICES = [
      "note": "약 3배 빠름 · 후보 1/3 감소 · A 등급 없음 — 급한 문서의 초벌용"},
 ]
 FAST_MODEL = MODEL_CHOICES[1]["id"]
+
+# ── 판정 기준 (2026-10-01, 23회차) — 화면 "판정 기준", 명령행 --mode, 환경 변수 PM_MODE ──
+#   strict "확실한 것만" : 구체적 기술 수단이 문장에 적힌 것(A)과 외부 공개가 명시된 문장만 표시. 애매하면 표시하지 않음.
+#                          사전에 걸린 문단만 모델에 보내고(빠름), 모델이 놓친 문단을 사전 점수로 살리지 않으며,
+#                          인용구 자리를 못 찾은 후보는 문단 전체를 칠하지 않고 버린다.  ← 기본
+#   broad  "빠짐없이"     : 2026-09-30b 까지의 동작. 수단이 안 적혀도 존재가 시사되는 표현(B)까지 넓게 잡고
+#                          규칙 사전 안전망으로 구제한다. 검토 인력이 충분할 때.
+#   회사 PC 실사용에서 "너무 많이, 애매한 것까지 칠한다" 는 사용자 판단으로 기본을 strict 로 두었다 (docs/05 23회차).
+MODE = os.environ.get("PM_MODE", "strict")
+if MODE not in ("strict", "broad"):
+    MODE = "strict"
+MODE_CHOICES = [
+    {"id": "strict", "label": "확실한 것만", "note": "구체적 수단이 적힌 문장과 공개가 명시된 문장만 · 사전에 걸린 문단만 검사 (빠름)"},
+    {"id": "broad", "label": "빠짐없이", "note": "존재가 시사되는 표현(B)까지 넓게 · 전체 문단 검사 · 사전 안전망 (느림, 표시 많음)"},
+]
+# strict 에서 모델에 보내고 후보로 인정하는 문단의 최소 글자 수. "38 ms → 11 ms" 같은 표 조각·짧은 수치 셀을
+# 후보에서 빼기 위한 값 (2026-10-01 측정에서 빠름 모델이 이런 조각을 A 로 올리는 일이 잦았다).
+STRICT_MIN_CHARS = int(os.environ.get("PM_STRICT_MIN_CHARS", "18"))
+# 판정 기준별 "전체 문단 검사" 기본값. strict 는 사전에 걸린 문단만(빠름), broad 는 전부.
+SCAN_ALL_DEFAULT = {"strict": False, "broad": True}
+# 한 번의 모델 호출에 담는 문단 글자 수 상한. 0 이면 슬라이드마다 한 번 (기본).
+# 슬라이드 여러 장을 한 호출로 묶으면 지시서를 읽는 횟수는 줄지만(Ollama 는 지시서가 같아도 호출마다 처음부터
+# 다시 읽는다 — 2026-10-01 측정), 문단이 많아질수록 모델이 후보를 놓친다 (예시 5장: 장마다 9건 → 2~3장씩 4건 →
+# 5장 한 번에 3건). 그래서 기본은 묶지 않는다. 문단이 아주 적은 장표가 많은 문서에서만 PM_BATCH_CHARS=800 정도로 시험해 볼 것.
+BATCH_CHARS = int(os.environ.get("PM_BATCH_CHARS", "0"))
 
 # Qwen3 의 '생각하기(thinking)' 모드. 켜면 정확도가 조금 오르지만 3~5배 느려집니다.
 # 기본은 끔. 웹 화면의 '추론 모드' 체크박스와 연결되어 있습니다.
@@ -216,9 +241,12 @@ class RunOptions:
     model: str = MODEL
     think: bool = THINK
 
-    # 규칙 사전에 걸리지 않은 문단도 모델에게 보낼지.
+    # 판정 기준: "strict" 확실한 것만(기본) / "broad" 빠짐없이.  (웹 화면: '판정 기준', 명령행 --mode)
+    mode: str = MODE
+
+    # 규칙 사전에 걸리지 않은 문단도 모델에게 보낼지. None 이면 판정 기준의 기본값(SCAN_ALL_DEFAULT)을 따른다.
     # 끄면 빠르지만 사전에 없는 새로운 표현은 놓칩니다.       (웹 화면: '전체 문단 검사')
-    scan_all_paragraphs: bool = True
+    scan_all_paragraphs: bool | None = None
 
     # 형광펜 구간 뒤에 【출원검토필요】 문구도 붙일지. 흑백 인쇄용 선택 사항 — 기본은 끔.
     # (색상 안내는 첫 슬라이드의 범례 상자가 맡습니다)        (웹 화면: '문구도 표시')
@@ -240,3 +268,9 @@ class RunOptions:
     skip_labels: tuple[str, ...] = field(
         default_factory=lambda: ("대외비", "CONFIDENTIAL", "목차", "감사합니다", "Thank you")
     )
+
+    def __post_init__(self) -> None:
+        if self.mode not in ("strict", "broad"):
+            self.mode = "strict"
+        if self.scan_all_paragraphs is None:
+            self.scan_all_paragraphs = SCAN_ALL_DEFAULT[self.mode]

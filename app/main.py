@@ -181,15 +181,20 @@ def _start(name: str, src: Path, opts: config.RunOptions,
     return job
 
 
-def _options(model: str, think: bool, scan_all: bool, tag_marks: bool,
-             learn: bool = True, learn_embed: bool = True, strip_hl: bool = True) -> config.RunOptions:
-    """화면의 체크박스 값 → RunOptions. 고른 모델이 이 PC 에 없으면 시작 전에 알려 준다."""
+def _options(model: str, think: bool, scan_all: bool | None, tag_marks: bool,
+             learn: bool = True, learn_embed: bool = True, strip_hl: bool = True,
+             mode: str = "") -> config.RunOptions:
+    """화면의 체크박스 값 → RunOptions. 고른 모델이 이 PC 에 없으면 시작 전에 알려 준다.
+
+    mode 가 비어 있으면 서버 기본 판정 기준(config.MODE). scan_all 이 None 이면 판정 기준의 기본값.
+    """
     model = model or config.MODEL
     h = analyze.health()
     if h.get("ok") and not analyze.model_available(model, h.get("models", [])):
         raise HTTPException(400, f"모델 {model} 이 이 PC 에 없습니다. 검은 창에서  ollama pull {model}  을 실행하거나 "
                                  f"화면의 모델 선택을 '정밀' 로 두세요.")
-    return config.RunOptions(model=model, think=think,
+    mode = mode if mode in ("strict", "broad") else config.MODE
+    return config.RunOptions(model=model, think=think, mode=mode,
                              scan_all_paragraphs=scan_all, tag_marks=tag_marks,
                              learn=bool(learn) and config.LEARN, learn_embed=bool(learn_embed),
                              strip_highlights=bool(strip_hl))
@@ -224,6 +229,10 @@ def health() -> JSONResponse:
     except Exception:  # noqa: BLE001
         ms = {"paras": 0, "rules": 0, "excludes": 0, "examples": 0}
     h["strip_default"] = config.STRIP_HIGHLIGHTS      # 화면 "원본 형광펜 지우고 시작" 의 기본값
+    # 판정 기준 — 선택지, 기본값, 기준별 '전체 문단 검사' 기본값 (화면이 기준을 바꾸면 체크박스 기본을 따라 바꾼다)
+    h["mode_default"] = config.MODE
+    h["mode_choices"] = config.MODE_CHOICES
+    h["scan_all_default"] = config.SCAN_ALL_DEFAULT
     h["learn"] = {"enabled": config.LEARN, "embed_default": config.LEARN_EMBED,
                   "embed_model": config.EMBED_MODEL,
                   "embed_installed": memory.embed_available(h.get("models", [])), **ms}
@@ -235,11 +244,12 @@ async def create_job(
     file: UploadFile,
     model: str = Form(config.MODEL),
     think: bool = Form(False),
-    scan_all: bool = Form(True),
+    scan_all: bool | None = Form(None),
     tag_marks: bool = Form(False),
     learn: bool = Form(True),
     learn_embed: bool = Form(True),
     strip_hl: bool = Form(True),
+    mode: str = Form(""),
 ) -> JSONResponse:
     """파일 업로드를 받아 임시 폴더에 저장하고, 분석 스레드를 시작한다."""
     name = file.filename or "deck.pptx"
@@ -251,7 +261,7 @@ async def create_job(
     with src.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
 
-    job = _start(name, src, _options(model, think, scan_all, tag_marks, learn, learn_embed, strip_hl),
+    job = _start(name, src, _options(model, think, scan_all, tag_marks, learn, learn_embed, strip_hl, mode),
                  "upload", workdir)
     return JSONResponse({"job_id": job.job_id})
 
@@ -323,13 +333,15 @@ def local_job(payload: dict = Body(...)) -> JSONResponse:
         src = local.resolve_pptx(str(payload.get("path") or ""))
     except ValueError as e:
         raise HTTPException(400, str(e))
+    scan_all = payload.get("scan_all")
     opts = _options(str(payload.get("model") or config.MODEL),
                     bool(payload.get("think", False)),
-                    bool(payload.get("scan_all", True)),
+                    None if scan_all is None else bool(scan_all),
                     bool(payload.get("tag_marks", False)),
                     bool(payload.get("learn", True)),
                     bool(payload.get("learn_embed", True)),
-                    bool(payload.get("strip_hl", True)))
+                    bool(payload.get("strip_hl", True)),
+                    str(payload.get("mode") or ""))
     job = _start(src.name, src, opts, "local")
     return JSONResponse({"job_id": job.job_id})
 

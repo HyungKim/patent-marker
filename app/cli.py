@@ -8,6 +8,7 @@ cli.py ─ 브라우저 없이 명령행(또는 mark.bat 끌어다 놓기)으로
     python -m app.cli 보고서.pptx --tag              → 【출원검토필요】 문구도 표시 (흑백 인쇄용)
     python -m app.cli 보고서.pptx --fast             → 빠름 모델(qwen3:4b-instruct)로 초벌 — 약 3배 빠름, 후보는 덜 잡힘
     python -m app.cli 보고서.pptx --keep-highlights  → 원본에 있던 형광펜을 지우지 않고 그대로 둠 (기본은 지우고 시작)
+    python -m app.cli 보고서.pptx --mode broad       → 판정 기준 '빠짐없이' (기본은 '확실한 것만')
 
   Windows 에서는 mark.bat 아이콘 위에 PPTX·PDF 를 끌어다 놓으면 이 파일이 실행됩니다.
   Ollama 가 떠 있어야 합니다 (run.bat / mark.bat 이 자동으로 켭니다).
@@ -36,7 +37,12 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--out", metavar="폴더", help="결과를 저장할 폴더 (기본: 원본 옆)")
     ap.add_argument("--tag", action="store_true", help="형광펜 뒤에 【출원검토필요】 문구도 표시")
     ap.add_argument("--think", action="store_true", help="추론 모드 (정확도↑ 속도↓)")
-    ap.add_argument("--no-scan-all", action="store_true", help="규칙 사전에 걸린 문단만 모델에 보냄 (빠름)")
+    ap.add_argument("--mode", choices=("strict", "broad"), default=config.MODE,
+                    help="판정 기준: strict = 확실한 것만(기본, 빠름) / broad = 빠짐없이 (2026-09-30b 까지의 동작)")
+    ap.add_argument("--scan-all", dest="scan_all", action="store_const", const=True, default=None,
+                    help="규칙 사전에 걸리지 않은 문단도 모델에 보냄 (확실한 것만 에서는 기본 끔)")
+    ap.add_argument("--no-scan-all", dest="scan_all", action="store_const", const=False,
+                    help="규칙 사전에 걸린 문단만 모델에 보냄 (빠름 · 빠짐없이 에서는 기본 켬)")
     ap.add_argument("--model", default=config.MODEL, help=f"Ollama 모델 이름 (기본 {config.MODEL})")
     ap.add_argument("--fast", action="store_true",
                     help=f"빠름 모델({config.FAST_MODEL}) 사용 — 약 3배 빠르지만 후보를 덜 잡음 (초벌용)")
@@ -138,8 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         out_dir = Path(local.clean_path(args.out)).expanduser().resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
-    opts = config.RunOptions(model=args.model, think=args.think,
-                             scan_all_paragraphs=not args.no_scan_all, tag_marks=args.tag,
+    opts = config.RunOptions(model=args.model, think=args.think, mode=args.mode,
+                             scan_all_paragraphs=args.scan_all, tag_marks=args.tag,
                              learn=config.LEARN and not args.no_learn,
                              learn_embed=config.LEARN_EMBED and not args.no_embed,
                              strip_highlights=config.STRIP_HIGHLIGHTS and not args.keep_highlights)
@@ -169,7 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n✗ 모델 {opts.model} 이 없습니다. `ollama pull {opts.model}` 로 먼저 내려받으세요.")
         return 1
 
-    print(f"온디바이스 모델 {opts.model} · 파일 {len(srcs)}개 · 도구 버전 {config.VERSION}")
+    print(f"온디바이스 모델 {opts.model} · 판정 기준 {pipeline.MODE_LABEL.get(opts.mode, opts.mode)} · "
+          f"파일 {len(srcs)}개 · 도구 버전 {config.VERSION}")
     for src in srcs:
         try:
             run_one(src, out_dir, opts)

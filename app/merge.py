@@ -27,10 +27,14 @@ from .extract import Deck, Segment
 # 등급 비교용 순위. 겹치는 구간은 더 높은 등급을 따릅니다.
 GRADE_RANK = {"C": 0, "B": 1, "A": 2}
 
-# 규칙 사전이 강하게 걸렸는데 모델이 아무 말도 하지 않은 문단을 구제하는 기준 점수.
+# 규칙 사전이 강하게 걸렸는데 모델이 아무 말도 하지 않은 문단을 구제하는 기준 점수 ('빠짐없이' 에서만).
 # 온디바이스 소형 모델은 묵시적 표현을 조용히 넘기는 일이 잦아서 이 안전망이 필요합니다.
 # 값을 올리면 구제가 줄고(정밀도↑), 내리면 구제가 늘어납니다(재현율↑).
 RESCUE_SCORE = 8
+
+# '확실한 것만'(strict) 에서 모델이 놓쳐도 살리는 공개 신호의 최소 가중치 — 전시·시연(8)·논문·학회(8)·보도자료(7) 만.
+# 출시·양산(6)·제안서 제출(6) 은 예정·계획 문장이 많아 strict 에서는 모델이 직접 골랐을 때만 남긴다.
+STRICT_RESCUE_WEIGHT = 7
 
 _WS = re.compile(r"\s+")
 _SENT_END = re.compile(r"[.!?。\n·]")
@@ -98,9 +102,33 @@ class Mark:
     disclosure_risk: bool
 
 
+def _locate_quote(text: str, quote: str) -> tuple[int, int] | None:
+    """모델 인용구의 자리: 그대로 → 공백 무시 → 숫자·공백 변형과 조각 합(memory.locate) 순으로 찾는다.
+
+    모델이 인용구를 한두 글자 고쳐 쓰는 일이 잦아(2026-09-21 측정 37건 중 5건), 못 찾으면 문단 전체가
+    칠해져 "막 칠한" 것처럼 보였다. 검토 학습이 쓰는 너그러운 찾기를 여기에도 쓴다.
+    """
+    span = _find_span(text, quote)
+    if span is not None:
+        return span
+    try:
+        from . import memory                        # 호출 시점에 가져온다 (순환 import 방지)
+        return memory.locate(text, quote)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def resolve(deck: Deck, findings: list[Finding],
-            hits_by_seg: dict[int, list[lexicon.Hit]]) -> tuple[list[Finding], list[Mark]]:
-    """이 파일의 진입점. (최종 Finding 목록, Mark 목록) 을 돌려준다."""
+            hits_by_seg: dict[int, list[lexicon.Hit]], mode: str = "broad") -> tuple[list[Finding], list[Mark]]:
+    """이 파일의 진입점. (최종 Finding 목록, Mark 목록) 을 돌려준다.
+
+    mode : "broad" 빠짐없이 (2026-09-30b 까지의 동작) / "strict" 확실한 것만 —
+           ① 인용구 자리를 못 찾은 후보는 문단 전체를 칠하지 않고 버린다
+           ② 모델이 낸 B(수단이 안 적힌 후보)는 공개 관련이 아니면 버린다
+           ③ 사전 점수 안전망은 쓰지 않고, 확실한 공개 신호(STRICT_RESCUE_WEIGHT 이상)만 살린다
+           ④ config.STRICT_MIN_CHARS 보다 짧은 문단의 모델 후보는 버린다 (표 조각)
+    """
+    strict = mode == "strict"
     seg_map: dict[int, Segment] = {s.seg_id: s for s in deck.segments}
 
     # ── 1) 모델 결과의 인용구를 원문 좌표로 변환하고, 경영 정보 오탐을 걸러낸다 ──
@@ -109,8 +137,15 @@ def resolve(deck: Deck, findings: list[Finding],
         seg = seg_map.get(f.seg_id)
         if seg is None:
             continue
-        f.span = _find_span(seg.text, f.quote)
+        if strict and f.source == "llm":
+            if len(seg.text) < config.STRICT_MIN_CHARS:
+                continue
+            if f.grade == "B" and not f.disclosure_risk:
+                continue
+        f.span = _locate_quote(seg.text, f.quote)
         if f.span is None:
+            if strict and f.source == "llm":
+                continue                                   # 자리를 못 찾으면 확실하지 않은 것 — 버린다
             # 인용구를 찾지 못하면 문단 전체를 칠하고, 인용구는 원문으로 교체한다
             f.quote = seg.text
         # 모델이 "특허 출원 0건 · 검토 미착수" 같은 특허 행정 상태를 '공개' 로 돌려보내면 뺀다.
@@ -137,12 +172,23 @@ def resolve(deck: Deck, findings: list[Finding],
         seg = seg_map.get(seg_id)
         if seg is None:
             continue
-        sc = lexicon.score(seg.text, hits)
-        risky = lexicon.has_disclosure_risk(hits)
-        if sc < RESCUE_SCORE and not risky:
+        # "논문·특허 등 공개 실적 없음" 처럼 뒤집힌 공개 신호는 공개로 세지 않는다
+        hits = [h for h in hits if not (h.disclosure and lexicon.negated(seg.text, h.span))]
+        if not hits:
             continue
-        if lexicon.is_business_noise(seg.text, hits) and not risky:
-            continue
+        if strict:
+            # 확실한 공개 신호만 살린다 (전시·시연 / 논문·학회 / 보도자료). 점수 안전망은 쓰지 않는다
+            hits = [h for h in hits if h.disclosure and h.weight >= STRICT_RESCUE_WEIGHT]
+            if not hits:
+                continue
+            risky = True
+        else:
+            sc = lexicon.score(seg.text, hits)
+            risky = lexicon.has_disclosure_risk(hits)
+            if sc < RESCUE_SCORE and not risky:
+                continue
+            if lexicon.is_business_noise(seg.text, hits) and not risky:
+                continue
         top = max(hits, key=lambda h: h.weight)      # 가장 가중치 높은 규칙을 대표로
         wide = _readable_span(seg.text, top.span)
         resolved.append(
@@ -161,13 +207,13 @@ def resolve(deck: Deck, findings: list[Finding],
             )
         )
 
-    # ── 3) 규칙 사전의 공개 신호로 disclosure_risk 보강 ──
+    # ── 3) 규칙 사전의 공개 신호로 disclosure_risk 보강 (뒤집힌 신호는 제외) ──
     for f in resolved:
         if not f.disclosure_risk and lexicon.has_disclosure_risk(hits_by_seg.get(f.seg_id, [])):
             seg = seg_map.get(f.seg_id)
             if seg and f.span:
                 for h in hits_by_seg[f.seg_id]:
-                    if h.category == "공개이력" and not (
+                    if h.category == "공개이력" and h.disclosure and not lexicon.negated(seg.text, h.span) and not (
                         h.span[1] <= f.span[0] or h.span[0] >= f.span[1]
                     ):
                         f.disclosure_risk = True

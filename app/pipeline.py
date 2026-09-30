@@ -30,9 +30,37 @@ from typing import Callable
 
 from . import analyze, config, extract, mark, memory, merge, pdfdoc, prehl, review
 
-RUN_LOG_COLUMNS = ["일시", "버전", "모델", "파일", "슬라이드", "모델호출", "입력토큰", "출력토큰",
+RUN_LOG_COLUMNS = ["일시", "버전", "모델", "판정기준", "파일", "슬라이드", "모델호출", "입력토큰", "출력토큰",
                    "읽기초", "쓰기초", "쓰기토큰/초", "총소요초", "후보", "A", "B", "C", "인용일치", "학습",
                    "원본형광펜", "결과파일"]
+
+MODE_LABEL = {"strict": "확실한 것만", "broad": "빠짐없이"}
+
+
+def batches_of(by_slide: dict[int, list], total: int, budget_chars: int) -> list[list[int]]:
+    """모델 호출 한 번에 묶을 슬라이드 번호들. 문단 글자 수 합이 budget_chars 를 넘지 않게 앞에서부터 묶는다.
+
+    지시서(시스템 프롬프트)는 호출마다 처음부터 다시 읽히므로(Ollama 는 호출 사이에 지시서 캐시를 재사용하지
+    않았다 — 2026-10-01 측정), 장표 몇 장을 한 호출로 묶으면 그만큼 읽는 양이 준다. 문단이 없는 장은 묶음에
+    넣지 않고, 한 장이 예산을 넘으면 그 장 하나만 따로 보낸다 (analyze_slide 가 NUM_CTX 에 맞춰 다시 나눈다).
+    budget_chars 가 0 이면 예전처럼 한 장에 한 번.
+    """
+    out: list[list[int]] = []
+    cur: list[int] = []
+    size = 0
+    for n in range(1, total + 1):
+        segs = by_slide.get(n, [])
+        if not segs:
+            continue
+        chars = sum(len(s.text) + 16 for s in segs)
+        if cur and (budget_chars <= 0 or size + chars > budget_chars):
+            out.append(cur)
+            cur, size = [], 0
+        cur.append(n)
+        size += chars
+    if cur:
+        out.append(cur)
+    return out
 
 
 def learn_text(lt: dict) -> str:
@@ -135,59 +163,66 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
             title = seg.text.strip()
             break
 
-    # ── 3단계: 슬라이드마다 온디바이스 모델에게 판정 요청 ──────
+    # ── 3단계: 슬라이드(묶음)마다 온디바이스 모델에게 판정 요청 ──
     all_findings: list[analyze.Finding] = []
     run_stats = analyze.new_stats()                 # 파일 전체의 토큰·시간 집계 (속도 기록용)
-    for slide_no in range(1, total + 1):
+    groups = batches_of(by_slide, total, config.BATCH_CHARS)
+    covered = {n for g in groups for n in g}
+    last_done = 0
+    for group in groups:
         if cancel is not None and cancel.is_set():
             raise Cancelled()
-        segs = by_slide.get(slide_no, [])
-        report(f"슬라이드 {slide_no} 분석 중 (온디바이스 모델)", slide_no - 1, total,
+        # 문단이 없어 건너뛴 장들은 완료로 표시하고 지나간다
+        for n in range(last_done + 1, group[0]):
+            if n not in covered:
+                report(f"슬라이드 {n} 분석 완료", n, total, [f.to_public() for f in all_findings])
+        label = analyze.slide_label(group)
+        segs = [s for n in group for s in by_slide.get(n, [])]
+        report(f"슬라이드 {label} 분석 중 (온디바이스 모델)", group[0] - 1, total,
                [f.to_public() for f in all_findings])
-        if segs:
-            # 규칙 사전이 찾은 카테고리를 힌트로 함께 보낸다
-            hints = {
-                s.seg_id: [h.category for h in hits_by_seg.get(s.seg_id, [])]
-                for s in segs
-            }
-            hints = {k: sorted(set(v)) for k, v in hints.items() if v}
+        # 규칙 사전이 찾은 카테고리를 힌트로 함께 보낸다
+        hints = {
+            s.seg_id: [h.category for h in hits_by_seg.get(s.seg_id, [])]
+            for s in segs
+        }
+        hints = {k: sorted(set(v)) for k, v in hints.items() if v}
 
-            # 시간 제한이 없는 대신 "살아 있음" 을 보여 준다: 경과 시간 + 모델이 읽는 중인지 쓰는 중인지
-            t_slide = time.monotonic()
-            snapshot = [f.to_public() for f in all_findings]
+        # 시간 제한이 없는 대신 "살아 있음" 을 보여 준다: 경과 시간 + 모델이 읽는 중인지 쓰는 중인지
+        t_slide = time.monotonic()
+        snapshot = [f.to_public() for f in all_findings]
 
-            def alive(nchars: int, _n=slide_no, _t=t_slide, _snap=snapshot) -> None:
-                sec = int(time.monotonic() - _t)
-                phase = f"답변 작성 중 {nchars}자" if nchars else "문단 읽는 중"
-                report(f"슬라이드 {_n} 분석 중 (온디바이스 모델) · {sec // 60}분 {sec % 60:02d}초 경과 · {phase}",
-                       _n - 1, total, _snap)
+        def alive(nchars: int, _lb=label, _first=group[0], _t=t_slide, _snap=snapshot) -> None:
+            sec = int(time.monotonic() - _t)
+            phase = f"답변 작성 중 {nchars}자" if nchars else "문단 읽는 중"
+            report(f"슬라이드 {_lb} 분석 중 (온디바이스 모델) · {sec // 60}분 {sec % 60:02d}초 경과 · {phase}",
+                   _first - 1, total, _snap)
 
-            # ③ 이 슬라이드와 비슷한 확정 사례를 골라 지시서에 붙인다 (학습이 꺼져 있거나 데이터가 없으면 빈 문자열)
-            block, info = memory.examples_for([s.text for s in segs], use_embed=use_embed)
-            system = (analyze.SYSTEM + "\n\n" + block) if block else None
-            learn["examples"] += info["pos"] + info["neg"]
-            if info["mode"] != "off" and block:
-                learn["mode"] = info["mode"]
+        # ③ 이 묶음과 비슷한 확정 사례를 골라 지시서에 붙인다 (학습이 꺼져 있거나 데이터가 없으면 빈 문자열)
+        block, info = memory.examples_for([s.text for s in segs], use_embed=use_embed)
+        system = (analyze.system_for(opts.mode) + "\n\n" + block) if block else None
+        learn["examples"] += info["pos"] + info["neg"]
+        if info["mode"] != "off" and block:
+            learn["mode"] = info["mode"]
 
-            slide_stats = analyze.new_stats()
-            try:
-                all_findings += analyze.analyze_slide(title, slide_no, total, segs, hints, opts,
-                                                      cancel=cancel, progress=alive, stats=slide_stats,
-                                                      system=system)
-            except analyze.Aborted:
-                raise Cancelled()
-            analyze.add_stats(run_stats, slide_stats)
-            sec = int(time.monotonic() - t_slide)
-            # 슬라이드 하나의 성적표 — 회사 PC 의 실제 속도가 여기서 숫자로 드러난다
-            report(f"슬라이드 {slide_no} 분석 완료 · {sec // 60}분 {sec % 60:02d}초 · {speed_text(slide_stats)}",
-                   slide_no, total, [f.to_public() for f in all_findings])
-            continue
-        report(f"슬라이드 {slide_no} 분석 완료", slide_no, total,
-               [f.to_public() for f in all_findings])
+        slide_stats = analyze.new_stats()
+        try:
+            all_findings += analyze.analyze_slide(title, group if len(group) > 1 else group[0], total, segs, hints,
+                                                  opts, cancel=cancel, progress=alive, stats=slide_stats,
+                                                  system=system)
+        except analyze.Aborted:
+            raise Cancelled()
+        analyze.add_stats(run_stats, slide_stats)
+        sec = int(time.monotonic() - t_slide)
+        last_done = group[-1]
+        # 묶음 하나의 성적표 — 회사 PC 의 실제 속도가 여기서 숫자로 드러난다
+        report(f"슬라이드 {label} 분석 완료 · {sec // 60}분 {sec % 60:02d}초 · {speed_text(slide_stats)}",
+               last_done, total, [f.to_public() for f in all_findings])
+    for n in range(last_done + 1, total + 1):
+        report(f"슬라이드 {n} 분석 완료", n, total, [f.to_public() for f in all_findings])
 
     # ── 4단계: 규칙 결과와 모델 결과 병합, 등급 확정 ──────────
     report("결과 병합 및 등급 산정", total, total)
-    resolved, marks = merge.resolve(deck, all_findings, hits_by_seg)
+    resolved, marks = merge.resolve(deck, all_findings, hits_by_seg, mode=opts.mode)
 
     # ── 4-1단계: 검토 학습 — ① 기억된 문단은 사람 판정으로, ② 지운 표현은 제외 ──
     if opts.learn:
@@ -248,6 +283,8 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
         "segments": len(deck.segments),
         # 속도 성적표 (화면 결과 칸·명령행·실행 기록에 쓰임)
         "model": opts.model,
+        "mode": opts.mode,
+        "mode_text": MODE_LABEL.get(opts.mode, opts.mode),
         "version": config.VERSION,
         "seconds": round(elapsed, 1),
         "calls": run_stats["calls"],
@@ -265,7 +302,8 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
         "prehl_text": prehl.text(deck.prehl),
     }
     _append_run_log([
-        _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), config.VERSION, opts.model, src.name, total,
+        _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), config.VERSION, opts.model, MODE_LABEL.get(opts.mode, opts.mode),
+        src.name, total,
         run_stats["calls"], run_stats["prompt_tokens"], run_stats["output_tokens"],
         round(run_stats["prompt_sec"], 1), round(run_stats["output_sec"], 1), round(tps, 1),
         round(elapsed, 1), len(resolved), counts["A"], counts["B"], counts["C"], f"{located}/{llm_n}",
