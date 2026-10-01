@@ -222,7 +222,7 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
 
     # ── 4단계: 규칙 결과와 모델 결과 병합, 등급 확정 ──────────
     report("결과 병합 및 등급 산정", total, total)
-    resolved, marks = merge.resolve(deck, all_findings, hits_by_seg, mode=opts.mode)
+    resolved, marks = merge.resolve(deck, all_findings, hits_by_seg, mode=opts.mode, disclosure=opts.disclosure)
 
     # ── 4-1단계: 검토 학습 — ① 기억된 문단은 사람 판정으로, ② 지운 표현은 제외 ──
     if opts.learn:
@@ -285,6 +285,8 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
         "model": opts.model,
         "mode": opts.mode,
         "mode_text": MODE_LABEL.get(opts.mode, opts.mode),
+        "disclosure": opts.disclosure,
+        "disclosure_text": "" if opts.disclosure else "공개 관련 표시 끔",
         "version": config.VERSION,
         "seconds": round(elapsed, 1),
         "calls": run_stats["calls"],
@@ -302,7 +304,8 @@ def _run(src: Path, dst: Path, opts: config.RunOptions, report, cancel, t_run: f
         "prehl_text": prehl.text(deck.prehl),
     }
     _append_run_log([
-        _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), config.VERSION, opts.model, MODE_LABEL.get(opts.mode, opts.mode),
+        _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), config.VERSION, opts.model,
+        MODE_LABEL.get(opts.mode, opts.mode) + ("" if opts.disclosure else " · 공개 끔"),
         src.name, total,
         run_stats["calls"], run_stats["prompt_tokens"], run_stats["output_tokens"],
         round(run_stats["prompt_sec"], 1), round(run_stats["output_sec"], 1), round(tps, 1),

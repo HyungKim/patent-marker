@@ -119,7 +119,8 @@ def _locate_quote(text: str, quote: str) -> tuple[int, int] | None:
 
 
 def resolve(deck: Deck, findings: list[Finding],
-            hits_by_seg: dict[int, list[lexicon.Hit]], mode: str = "broad") -> tuple[list[Finding], list[Mark]]:
+            hits_by_seg: dict[int, list[lexicon.Hit]], mode: str = "broad",
+            disclosure: bool = True) -> tuple[list[Finding], list[Mark]]:
     """이 파일의 진입점. (최종 Finding 목록, Mark 목록) 을 돌려준다.
 
     mode : "broad" 빠짐없이 (2026-09-30b 까지의 동작) / "strict" 확실한 것만 —
@@ -127,6 +128,8 @@ def resolve(deck: Deck, findings: list[Finding],
            ② 모델이 낸 B(수단이 안 적힌 후보)는 공개 관련이 아니면 버린다
            ③ 사전 점수 안전망은 쓰지 않고, 확실한 공개 신호(STRICT_RESCUE_WEIGHT 이상)만 살린다
            ④ config.STRICT_MIN_CHARS 보다 짧은 문단의 모델 후보는 버린다 (표 조각)
+    disclosure : False 면 공개 관련 표시 끔 (2026-10-01b) — 모델이 낸 공개 후보는 A 면 공개 표시만 지우고 보통 후보로 두고,
+           그 밖(공개 여부만 말하는 문장)은 버린다. 공개 규칙(RISK_*)은 prescreen 에서 이미 빠져 구제·공개 보강에도 쓰이지 않는다.
     """
     strict = mode == "strict"
     seg_map: dict[int, Segment] = {s.seg_id: s for s in deck.segments}
@@ -137,6 +140,10 @@ def resolve(deck: Deck, findings: list[Finding],
         seg = seg_map.get(f.seg_id)
         if seg is None:
             continue
+        if not disclosure and f.disclosure_risk and f.source == "llm":
+            if f.grade != "A":
+                continue                                   # 공개 여부만 말하는 문장 — 표시 끔
+            f.disclosure_risk = False                      # 수단이 적힌 A 는 보통 후보로 남긴다
         if strict and f.source == "llm":
             if len(seg.text) < config.STRICT_MIN_CHARS:
                 continue

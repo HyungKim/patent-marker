@@ -9,6 +9,7 @@ cli.py ─ 브라우저 없이 명령행(또는 mark.bat 끌어다 놓기)으로
     python -m app.cli 보고서.pptx --fast             → 빠름 모델(qwen3:4b-instruct)로 초벌 — 약 3배 빠름, 후보는 덜 잡힘
     python -m app.cli 보고서.pptx --keep-highlights  → 원본에 있던 형광펜을 지우지 않고 그대로 둠 (기본은 지우고 시작)
     python -m app.cli 보고서.pptx --mode broad       → 판정 기준 '빠짐없이' (기본은 '확실한 것만')
+    python -m app.cli 보고서.pptx --no-disclosure   → 공개 관련 표시 끔 (전시·논문·출시 신호를 보지 않음, 조금 빠름)
 
   Windows 에서는 mark.bat 아이콘 위에 PPTX·PDF 를 끌어다 놓으면 이 파일이 실행됩니다.
   Ollama 가 떠 있어야 합니다 (run.bat / mark.bat 이 자동으로 켭니다).
@@ -50,6 +51,8 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--no-embed", action="store_true", help=f"유사 사례를 뜻 기준({config.EMBED_MODEL})으로 찾지 않고 글자 겹침만")
     ap.add_argument("--keep-highlights", action="store_true",
                     help="원본에 있던 형광펜을 지우지 않고 그대로 둠 (기본은 지우고 시작 — 검토 반영 때 섞이지 않게)")
+    ap.add_argument("--no-disclosure", action="store_true",
+                    help="공개 관련 표시 끔 — 전시·논문·출시 같은 공개 신호를 보지 않고 공개 후보를 내지 않음 (조금 빠름)")
     args = ap.parse_args(argv)
     if args.fast:
         args.model = config.FAST_MODEL
@@ -148,7 +151,8 @@ def main(argv: list[str] | None = None) -> int:
                              scan_all_paragraphs=args.scan_all, tag_marks=args.tag,
                              learn=config.LEARN and not args.no_learn,
                              learn_embed=config.LEARN_EMBED and not args.no_embed,
-                             strip_highlights=config.STRIP_HIGHLIGHTS and not args.keep_highlights)
+                             strip_highlights=config.STRIP_HIGHLIGHTS and not args.keep_highlights,
+                             disclosure=config.DISCLOSURE and not args.no_disclosure)
 
     files = recover_dropped(args.files, os.environ.get("PM_CMDLINE", ""))
     if files != args.files:
@@ -175,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n✗ 모델 {opts.model} 이 없습니다. `ollama pull {opts.model}` 로 먼저 내려받으세요.")
         return 1
 
-    print(f"온디바이스 모델 {opts.model} · 판정 기준 {pipeline.MODE_LABEL.get(opts.mode, opts.mode)} · "
+    print(f"온디바이스 모델 {opts.model} · 판정 기준 {pipeline.MODE_LABEL.get(opts.mode, opts.mode)}{'' if opts.disclosure else ' · 공개 표시 끔'} · "
           f"파일 {len(srcs)}개 · 도구 버전 {config.VERSION}")
     for src in srcs:
         try:

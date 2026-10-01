@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 # 화면 제목 옆(회색 글씨)·검은 창 첫 줄·mark.bat 출력·오류 메시지 끝에 그대로 나옵니다.
 # "지금 도는 것이 새 버전인가" 를 회사 PC 에서 한눈에 확인하는 용도라, 저장소에 올릴 때마다
 # 올린 날짜로 바꿉니다 (같은 날 두 번째면 뒤에 b, c …). 동작에는 아무 영향이 없습니다.
-VERSION = "2026-10-01"
+VERSION = "2026-10-01b"
 
 # ─────────────────────────────────────────────────────────────────
 # 1. 온디바이스 LLM (Ollama) 관련
@@ -108,6 +108,11 @@ MEMORY_SIM = float(os.environ.get("PM_MEMORY_SIM", "0.9"))
 #                      회사 PC 의 PDF 뷰어에서 덮은 자리가 이상하게 보이면 0 으로 끄세요 (학습에는 영향 없음).
 STRIP_HIGHLIGHTS = os.environ.get("PM_STRIP_HL", "1") == "1"
 PDF_COVER_BAKED = os.environ.get("PM_PDF_COVER", "1") == "1"
+
+# 공개 관련 표시 — 전시·시연, 논문·학회, 보도자료, 출시 같은 '외부 공개' 신호를 찾아 빨간 형광펜(C 공개 관련정보)으로 표시. 기본 켬.
+#   끄면 사전의 공개 규칙(RISK_*)을 신호·구제에 쓰지 않고 모델이 낸 공개 후보도 내지 않는다 (수단이 적힌 A 후보는 그대로).
+#   예시 문서 측정(2026-10-01): 입력 토큰 −2%, 출력 토큰 −13%, 시간 5~7% 단축. 항상 끄려면  setx PM_DISCLOSURE 0  (새 cmd 창부터)
+DISCLOSURE = os.environ.get("PM_DISCLOSURE", "1") == "1"
 
 # 모델이 '아무 응답도 보내지 않는' 상태를 얼마나 참을지(초). 0 = 제한 없음 (기본).
 #   회사 PC(CPU 만, 16GB)에서는 슬라이드 하나에 10분이 넘게 걸릴 수 있어 고정 제한을 없앴습니다.
@@ -260,6 +265,10 @@ class RunOptions:
     # 분석 전에 원본에 있던 형광펜을 걷어낼지 (app/prehl.py). 원본 파일은 바뀌지 않습니다.
     # (웹 화면: '원본 형광펜 지우고 시작', 명령행 --keep-highlights 로 끔)
     strip_highlights: bool = STRIP_HIGHLIGHTS
+
+    # 공개 관련 표시 (전시·논문·출시 신호 → C 공개 관련정보). 끄면 공개 규칙·공개 후보를 쓰지 않아 조금 빠르다.
+    # (웹 화면: '공개 관련 표시', 명령행 --no-disclosure 로 끔)
+    disclosure: bool = DISCLOSURE
 
     # 이 글자 수보다 짧은 문단은 분석하지 않습니다. (예: "01", "→" 같은 장식 글자)
     min_chars: int = 6

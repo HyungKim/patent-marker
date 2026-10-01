@@ -183,7 +183,7 @@ def _start(name: str, src: Path, opts: config.RunOptions,
 
 def _options(model: str, think: bool, scan_all: bool | None, tag_marks: bool,
              learn: bool = True, learn_embed: bool = True, strip_hl: bool = True,
-             mode: str = "") -> config.RunOptions:
+             mode: str = "", disclosure: bool = True) -> config.RunOptions:
     """화면의 체크박스 값 → RunOptions. 고른 모델이 이 PC 에 없으면 시작 전에 알려 준다.
 
     mode 가 비어 있으면 서버 기본 판정 기준(config.MODE). scan_all 이 None 이면 판정 기준의 기본값.
@@ -197,7 +197,7 @@ def _options(model: str, think: bool, scan_all: bool | None, tag_marks: bool,
     return config.RunOptions(model=model, think=think, mode=mode,
                              scan_all_paragraphs=scan_all, tag_marks=tag_marks,
                              learn=bool(learn) and config.LEARN, learn_embed=bool(learn_embed),
-                             strip_highlights=bool(strip_hl))
+                             strip_highlights=bool(strip_hl), disclosure=bool(disclosure))
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -229,6 +229,7 @@ def health() -> JSONResponse:
     except Exception:  # noqa: BLE001
         ms = {"paras": 0, "rules": 0, "excludes": 0, "examples": 0}
     h["strip_default"] = config.STRIP_HIGHLIGHTS      # 화면 "원본 형광펜 지우고 시작" 의 기본값
+    h["disclosure_default"] = config.DISCLOSURE       # 화면 "공개 관련 표시" 의 기본값 (PM_DISCLOSURE=0 이면 해제)
     # 판정 기준 — 선택지, 기본값, 기준별 '전체 문단 검사' 기본값 (화면이 기준을 바꾸면 체크박스 기본을 따라 바꾼다)
     h["mode_default"] = config.MODE
     h["mode_choices"] = config.MODE_CHOICES
@@ -250,6 +251,7 @@ async def create_job(
     learn_embed: bool = Form(True),
     strip_hl: bool = Form(True),
     mode: str = Form(""),
+    disclosure: bool = Form(True),
 ) -> JSONResponse:
     """파일 업로드를 받아 임시 폴더에 저장하고, 분석 스레드를 시작한다."""
     name = file.filename or "deck.pptx"
@@ -261,7 +263,7 @@ async def create_job(
     with src.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
 
-    job = _start(name, src, _options(model, think, scan_all, tag_marks, learn, learn_embed, strip_hl, mode),
+    job = _start(name, src, _options(model, think, scan_all, tag_marks, learn, learn_embed, strip_hl, mode, disclosure),
                  "upload", workdir)
     return JSONResponse({"job_id": job.job_id})
 
@@ -341,7 +343,8 @@ def local_job(payload: dict = Body(...)) -> JSONResponse:
                     bool(payload.get("learn", True)),
                     bool(payload.get("learn_embed", True)),
                     bool(payload.get("strip_hl", True)),
-                    str(payload.get("mode") or ""))
+                    str(payload.get("mode") or ""),
+                    bool(payload.get("disclosure", True)))
     job = _start(src.name, src, opts, "local")
     return JSONResponse({"job_id": job.job_id})
 

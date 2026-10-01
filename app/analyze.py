@@ -636,6 +636,7 @@ def prescreen(deck: Deck, opts: config.RunOptions) -> tuple[dict[int, list[lexic
     너무 짧은 문단과 '대외비' 같은 상투 문구는 분석에서 제외합니다.
     '확실한 것만'(strict) 에서는 ① 명시형·공개·사용자 규칙만 신호로 보고(lexicon.STRICT_RULE_IDS)
     ② config.STRICT_MIN_CHARS 보다 짧은 문단은 모델에 보내지 않습니다 (표 조각·숫자 셀).
+    공개 관련 표시(opts.disclosure)를 끄면 공개 규칙(RISK_*)에 걸린 것은 신호로도 구제에도 쓰지 않습니다.
     """
     strict = opts.mode == "strict"
     hits_by_seg: dict[int, list[lexicon.Hit]] = {}
@@ -648,6 +649,8 @@ def prescreen(deck: Deck, opts: config.RunOptions) -> tuple[dict[int, list[lexic
         hits = lexicon.scan(seg.text)
         if strict:
             hits = lexicon.strict_only(hits)
+        if not opts.disclosure:
+            hits = [h for h in hits if not h.disclosure]      # 공개 관련 표시 끔
         hits_by_seg[seg.seg_id] = hits
         if strict and len(seg.text) < config.STRICT_MIN_CHARS:
             continue
