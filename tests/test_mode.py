@@ -226,5 +226,39 @@ proc = subprocess.run([sys.executable, "-m", "app.cli", str(SAMPLE), "--out", st
                       cwd=str(ROOT), env=env, capture_output=True, text=True, encoding="utf-8")
 check("명령행 --mode broad: '판정 기준 빠짐없이'", proc.returncode == 0 and "판정 기준 빠짐없이" in proc.stdout)
 
+# ── 8. 공개 관련 표시 끄기 (2026-10-01b) ─────────────────────────────
+deck8 = extract.extract(str(SAMPLE))
+hits_on, tg_on = analyze.prescreen(deck8, config.RunOptions(mode="strict"))
+hits_off, tg_off = analyze.prescreen(deck8, config.RunOptions(mode="strict", disclosure=False))
+check("공개 표시 끄면 사전의 공개 규칙(RISK_*)이 신호에서 빠진다",
+      any(h.disclosure for v in hits_on.values() for h in v) and not any(h.disclosure for v in hits_off.values() for h in v))
+check("공개 표시 끄면 공개 규칙에만 걸린 문단은 모델에 보내지 않는다", len(tg_off) < len(tg_on), f"{len(tg_on)} -> {len(tg_off)}")
+seg8 = Segment(seg_id=1, slide_no=1, kind="body", addr="t/1",
+               text="450nm 청색광과 660nm 적색광을 200Hz로 교번 점등하는 모듈을 InterBattery 부스에서 실물 시연")
+deck8s = SimpleNamespace(segments=[seg8])
+
+
+def _f8(grade: str, d: bool) -> analyze.Finding:
+    return analyze.Finding(seg_id=1, slide_no=1, quote="200Hz로 교번 점등", grade=grade,
+                           category="구성·구조" if grade == "A" else "공개이력", implicit=False, disclosure_risk=d, reason="r")
+
+
+for m8 in ("strict", "broad"):
+    r_a, _ = merge.resolve(deck8s, [_f8("A", True)], {1: []}, mode=m8, disclosure=False)
+    r_b, _ = merge.resolve(deck8s, [_f8("B", True)], {1: []}, mode=m8, disclosure=False)
+    r_on, _ = merge.resolve(deck8s, [_f8("B", True)], {1: []}, mode=m8, disclosure=True)
+    check(f"[{m8}] 공개 표시 끄면 공개 A 는 보통 A 로 남고 공개 B 는 버린다 (켜면 B 유지)",
+          len(r_a) == 1 and r_a[0].grade == "A" and not r_a[0].disclosure_risk and len(r_b) == 0 and len(r_on) == 1)
+res8, st8 = pipeline.run(SAMPLE, TMP / "strict_nodisc.pptx", config.RunOptions(mode="strict", disclosure=False))
+check("파이프라인: 공개 표시 끄면 공개 후보 0건, 집계와 실행 기록에 '공개 끔'",
+      st8["disclosure_risk"] == 0 and st8["disclosure"] is False and st8["disclosure_text"] == "공개 관련 표시 끔"
+      and not any(f.disclosure_risk for f in res8)
+      and "공개 끔" in (config.REVIEW_DIR / "run_log.tsv").read_text(encoding="utf-8-sig").splitlines()[-1])
+check("cli --no-disclosure", cli._parse(["x.pptx"]).no_disclosure is False and cli._parse(["x.pptx", "--no-disclosure"]).no_disclosure is True)
+check("/api/health 에 공개 표시 기본값", h.get("disclosure_default") is True)
+check("화면에 공개 관련 표시 체크박스와 요청 전달", 'id="optDisc"' in html and 'fd.append("disclosure"' in html)
+check("서버 옵션: disclosure", web._options("qwen3:8b", False, None, False, disclosure=False).disclosure is False
+      and web._options("qwen3:8b", False, None, False).disclosure is True)
+
 print("\n" + ("모두 통과" if not FAILS else f"실패 {FAILS}건") + f"  (임시 폴더: {TMP})")
 sys.exit(1 if FAILS else 0)
