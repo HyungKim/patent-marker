@@ -268,6 +268,8 @@
       <label class="opt" title="색을 볼 수 없는 흑백 인쇄용. 평소에는 첫 슬라이드의 색상 범례로 충분합니다"><input type="checkbox" id="optTag"> 형광펜 뒤에 【출원검토필요】 문구도 표시 (흑백 인쇄용)</label>
       <label class="opt" title="작성자가 강조하려고 칠해 둔 형광펜을 걷어내고 분석합니다. 원본 파일은 그대로이고, 마킹본에는 도구와 검토자의 형광펜만 남습니다. 끄면 작성자 형광펜이 검토 반영 때 검토자가 칠한 것으로 읽힐 수 있습니다">
         <input type="checkbox" id="optStrip" checked> 원본 형광펜 지우고 시작</label>
+      <label class="opt" title="전시·시연, 논문·학회, 보도자료, 출시처럼 외부 공개를 뜻하는 문장을 찾아 빨간 형광펜(C 공개 관련정보)으로 표시합니다. 끄면 사전의 공개 규칙을 쓰지 않고 공개 후보를 내지 않아 조금 빠릅니다 (수단이 적힌 A 후보는 그대로)">
+        <input type="checkbox" id="optDisc" checked> 공개 관련 표시 (전시·논문·출시)</label>
       <label class="opt" title="사전에 걸리지 않은 문단도 모델에 보냅니다. 확실한 것만 에서는 기본 끔(빠름), 빠짐없이 에서는 기본 켬"><input type="checkbox" id="optScanAll"> 전체 문단 검사<span class="mnote" id="scanNote"></span></label>
       <label class="opt"><input type="checkbox" id="optThink"> 추론 모드 (정확↑ 속도↓)</label>
       <div class="grow"></div>
@@ -506,6 +508,7 @@ async function health(){
     fillModels(h.choices || []);
     fillLearn(h.learn || {});
     if(h.strip_default === false) $("#optStrip").checked = false;   // 환경 변수 PM_STRIP_HL=0 이면 기본 해제
+    if(h.disclosure_default === false) $("#optDisc").checked = false;   // 환경 변수 PM_DISCLOSURE=0 이면 기본 해제
     return true;
   }catch(e){
     $("#hdot").className = "dot bad";
@@ -643,7 +646,7 @@ $("#go").onclick = async () => {
   const model = chosenModel();           // 정밀(8b) / 빠름(4b) — 비어 있으면 서버 기본값
   const mode = chosenMode();             // 확실한 것만 / 빠짐없이
   const learn = $("#optLearn").checked, learn_embed = $("#optEmbed").checked;
-  const strip_hl = $("#optStrip").checked;
+  const strip_hl = $("#optStrip").checked, disclosure = $("#optDisc").checked;
   try{
     if(selected.kind === "upload"){
       const fd = new FormData();           // 파일 업로드용 묶음
@@ -651,7 +654,7 @@ $("#go").onclick = async () => {
       if(model) fd.append("model", model);
       if(mode) fd.append("mode", mode);
       fd.append("think", think); fd.append("scan_all", scan_all); fd.append("tag_marks", tag_marks);
-      fd.append("learn", learn); fd.append("learn_embed", learn_embed); fd.append("strip_hl", strip_hl);
+      fd.append("learn", learn); fd.append("learn_embed", learn_embed); fd.append("strip_hl", strip_hl); fd.append("disclosure", disclosure);
       let r;
       try{ r = await fetch("/api/jobs", {method:"POST", body:fd}); }
       catch(_){ throw new Error("브라우저 업로드가 되지 않습니다 — 이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요."); }
@@ -659,7 +662,7 @@ $("#go").onclick = async () => {
       if(!r.ok) throw new Error(j.detail || "업로드 실패 (이 PC 에서 업로드가 막혀 있으면 ①~③ 을 쓰세요)");
       jobId = j.job_id;
     } else {
-      const j = await lapi("/api/local/jobs", {path:selected.path, model, mode, think, scan_all, tag_marks, learn, learn_embed, strip_hl});
+      const j = await lapi("/api/local/jobs", {path:selected.path, model, mode, think, scan_all, tag_marks, learn, learn_embed, strip_hl, disclosure});
       jobId = j.job_id;
     }
   }catch(e){ showPickError(e.message); return; }   // 시작 전 오류는 그 자리에서 보여 주고 머문다
@@ -737,7 +740,7 @@ function render(st){
   ].map(([n,l]) => `<div class="card"><b>${n}</b><span>${l}</span></div>`).join("");
   // 속도 성적표: 개선 전후 비교의 근거. 같은 내용이 review_data\run_log.tsv 에도 한 줄로 쌓인다.
   $("#speed").textContent = st.speed_text
-    ? `이번 실행: ${st.speed_text} · 모델 호출 ${st.calls}회 · 인용구 일치 ${st.quote_located} · ${st.model}${st.mode_text ? ` · 판정 기준 ${st.mode_text}` : ""} · 버전 ${st.version}  (review_data\\run_log.tsv 에 기록됨)`
+    ? `이번 실행: ${st.speed_text} · 모델 호출 ${st.calls}회 · 인용구 일치 ${st.quote_located} · ${st.model}${st.mode_text ? ` · 판정 기준 ${st.mode_text}` : ""}${st.disclosure_text ? ` · ${st.disclosure_text}` : ""} · 버전 ${st.version}  (review_data\\run_log.tsv 에 기록됨)`
       + (st.learn_text ? `\n검토 학습: ${st.learn_text}` : "")
       + (st.prehl_text ? `\n${st.prehl_text}` : "")
     : (st.prehl_text || "");
@@ -1033,6 +1036,7 @@ function changesText(e){
   if(c.dataset_delta) parts.push(`교정 데이터 ${c.dataset_delta>0?"+":""}${c.dataset_delta}건`);
   if(c.model_change) parts.push(`모델 ${esc(c.model_change)}`);
   if(c.mode_change) parts.push(`<b>판정 기준 ${esc(c.mode_change)} (프롬프트 변경 — 회차 비교 주의)</b>`);
+  if(c.disclosure_change) parts.push(`공개 관련 표시 ${esc(c.disclosure_change)}`);
   return parts.length ? parts.join(" · ") : "설정 변경 없음";
 }
 
